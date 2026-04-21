@@ -35,7 +35,7 @@ Cisco IOS XE
 
 ---
 
-## 2. Folder structure → good
+## 2. Folder structure 
 
 ```text
 labs/ra09-interface-description

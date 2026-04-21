@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-04-21T09:52:50",
+  "total_tasks": 1,
+  "success": 0,
+  "already_correct": 1,
+  "failed": 0,
+  "results": [
+    {
+      "timestamp": "2026-04-21T09:52:50",
+      "device_name": "LAB-RA09-C01-R01",
+      "host": "172.17.9.2",
+      "interface_type": "GigabitEthernet",
+      "interface_name": "0/0/0",
+      "desired_description": "RA09-L management interface",
+      "old_description": "RA09-L management interface",
+      "new_description": "RA09-L management interface",
+      "changed": false,
+      "verified": true,
+      "status": "already_correct",
+      "error": null
+    }
+  ]
+}

@@ -1,43 +1,209 @@
-# RA09 Interface Description Automation
+# RA09 – Interface Description Automation
 
-## Goal
-Automate interface description configuration on a Cisco IOS XE router using a YAML-driven workflow.
+> YAML-driven, idempotent interface description management on Cisco IOS XE using RESTCONF and NETCONF.
 
-## How it works
-1. Read desired state from `changes.yaml`
-2. Read current state via RESTCONF
-3. Compare actual vs desired
-4. Apply change via NETCONF if needed
-5. Verify result via RESTCONF
-6. Output results to `report.json`
+---
 
-## Requirements
-- Python 3
-- ncclient
-- requests
-- PyYAML
-- urllib3
-- Router with NETCONF and RESTCONF enabled
+## Overview
 
-## Install
+This lab automates interface description configuration on a Cisco IOS XE router without touching the CLI.
+Desired state is declared in a YAML file. The script reads current state via **RESTCONF**, compares it against
+the desired state, and applies any delta via **NETCONF**. A final RESTCONF read verifies the change.
+Results are written to a structured JSON report.
+
+The workflow is fully **idempotent**: running it twice produces the same outcome — the second run detects
+the description is already correct and skips the change without touching the device.
+
+---
+
+## Workflow
+
+```
+changes.yaml (desired state)
+        │
+        ▼
+ RESTCONF GET ──► compare actual vs desired
+        │
+        ├── already correct → skip, mark verified
+        │
+        └── delta found
+                │
+                ▼
+         NETCONF edit-config (running)
+                │
+                ▼
+         RESTCONF GET (verify)
+                │
+                ▼
+           report.json
+```
+
+---
+
+## Repository Structure
+
+```
+labs/ra09-interface-description/
+├── automate_interface_desc.py   # Main automation script
+├── changes.yaml                 # Desired state input (devices + interface descriptions)
+├── report.json                  # Run output (auto-generated, do not edit)
+├── requirements.txt             # Python dependencies
+└── README.md
+```
+
+---
+
+## Prerequisites
+
+**Router requirements:**
+
+- Cisco IOS XE with NETCONF and RESTCONF enabled
+- NETCONF runs on TCP/830, RESTCONF on HTTPS/443
+
+Enable on the device if not already active:
+
+```
+netconf-yang
+restconf
+```
+
+**Host requirements:**
+
+- Python 3.8 or later
+- Network reachability to the router management IP on ports 830 and 443
+
+---
+
+## Installation
+
 ```bash
+# Clone the repository
+git clone https://github.com/TimurKhakimovPXL/network-automation-ra09.git
+cd network-automation-ra09/labs/ra09-interface-description
+
+# Create and activate a virtual environment
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate        # Windows: venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
+```
 
+---
 
-## Run
+## Configuration
+
+Edit `changes.yaml` to declare your desired state. Each device entry supports multiple interface changes.
+
+```yaml
+devices:
+  - name: LAB-RA09-C01-R01
+    host: 172.17.9.2
+    username: cisco
+    password: cisco
+    changes:
+      - interface_type: GigabitEthernet
+        interface_name: "0/0/0"
+        description: RA09-L management interface
+```
+
+> **Note:** Credentials are stored in plaintext for lab purposes only.
+> In production, use environment variables or a secrets manager (e.g. Vault, Ansible Vault).
+
+---
+
+## Usage
+
+```bash
 python3 automate_interface_desc.py
+```
 
-Result
-First run → applies configuration if needed
-Second run → returns already_correct (idempotent behavior)
-Example
+The script reads `changes.yaml` from the working directory and writes `report.json` on completion.
 
-Interface:
+---
 
-GigabitEthernet0/0/0
+## Output
 
-Description applied:
+**Console (first run — change applied):**
 
-RA09-L management interface
+```
+=== Processing LAB-RA09-C01-R01 GigabitEthernet0/0/0 ===
+[INFO] Current description: None
+[INFO] NETCONF edit applied.
+[SUCCESS] Verified description: 'RA09-L management interface'
+
+[INFO] Report written to report.json
+```
+
+**Console (second run — idempotent):**
+
+```
+=== Processing LAB-RA09-C01-R01 GigabitEthernet0/0/0 ===
+[INFO] Current description: 'RA09-L management interface'
+[SKIP] Desired description already present. No change needed.
+
+[INFO] Report written to report.json
+```
+
+**`report.json` structure:**
+
+```json
+{
+  "generated_at": "2026-04-21T09:52:50",
+  "total_tasks": 1,
+  "success": 0,
+  "already_correct": 1,
+  "failed": 0,
+  "results": [
+    {
+      "device_name": "LAB-RA09-C01-R01",
+      "interface_type": "GigabitEthernet",
+      "interface_name": "0/0/0",
+      "desired_description": "RA09-L management interface",
+      "old_description": "RA09-L management interface",
+      "new_description": "RA09-L management interface",
+      "changed": false,
+      "verified": true,
+      "status": "already_correct"
+    }
+  ]
+}
+```
+
+### Status values
+
+| Status | Meaning |
+|---|---|
+| `success` | Change applied and verified |
+| `already_correct` | No change needed; desired state already present |
+| `interface_not_found` | Interface does not exist on the device (HTTP 404) |
+| `read_failed` | RESTCONF GET failed |
+| `edit_failed` | NETCONF edit-config failed |
+| `verify_failed` | Post-change RESTCONF GET failed |
+| `verify_mismatch` | Change applied but verification returned unexpected value |
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---|---|
+| `ncclient` | NETCONF client (edit-config) |
+| `requests` | RESTCONF HTTP client |
+| `PyYAML` | Desired state file parsing |
+| `urllib3` | TLS warning suppression for self-signed certs |
+
+---
+
+## Technologies
+
+- [RESTCONF (RFC 8040)](https://datatracker.ietf.org/doc/html/rfc8040)
+- [NETCONF (RFC 6241)](https://datatracker.ietf.org/doc/html/rfc6241)
+- [Cisco IOS XE YANG Models](https://github.com/YangModels/yang/tree/main/vendor/cisco/xe)
+- YANG model used: `Cisco-IOS-XE-native`
+
+---
+
+## Course Context
+
+This lab is part of the **NetAcad DEVASC** (DevNet Associate) curriculum — RA09.

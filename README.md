@@ -1,41 +1,35 @@
-# Network Automation – RA09
+# Network Automation Labs
 
-## Overview
-This project automates interface description configuration on a Cisco IOS XE router using a model-driven approach.
+Python-based network automation labs from the **NetAcad DEVASC** curriculum, targeting Cisco IOS XE using model-driven programmability (NETCONF / RESTCONF / YANG).
 
-## Key Concepts
-- RESTCONF (read state)
-- NETCONF (apply configuration)
-- YAML (desired state)
-- Idempotent automation
+## Labs
 
-## Project Structure
-```text
-labs/ra09-interface-description/
-Lab Description
+| Lab | Description | Protocols |
+|-----|-------------|-----------|
+| [ra09-interface-description](labs/ra09-interface-description/README.md) | Idempotent interface description automation | RESTCONF · NETCONF |
 
-This lab demonstrates:
+## Stack
 
-reading interface configuration via RESTCONF
-comparing with desired state
-applying changes via NETCONF
-verifying results automatically
-Result
+- Python 3.8+
+- NETCONF (RFC 6241) via `ncclient`
+- RESTCONF (RFC 8040) via `requests`
+- YANG model: `Cisco-IOS-XE-native`
+- Desired state declared in YAML
 
-The script ensures that the interface description is:
+## Repository Structure
 
-applied if missing
-skipped if already correct
-Technologies Used
-Python
-ncclient
-requests
-RESTCONF / NETCONF
-Cisco IOS XE
+```
+labs/
+└── ra09-interface-description/   # RA09 – interface description automation
+```
 
----
+## Prerequisites
 
-## 2. Folder structure 
+Each lab has its own `requirements.txt` and `README.md`. See the individual lab directory for setup and usage instructions.
 
-```text
-labs/ra09-interface-description
+All labs assume a Cisco IOS XE device with NETCONF and RESTCONF enabled:
+
+```
+netconf-yang
+restconf
+```

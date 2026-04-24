@@ -4,7 +4,7 @@ author: Timur Khakimov
 supervisor: Wim Leppens
 institution: PXL University of Applied Sciences
 group: DEVNET
-date: 2026-04-22
+date: 2026-04-24
 status: active
 tags:
   - network-automation
@@ -165,20 +165,38 @@ Each rack gets its own VLAN and subnet block based on rack number X.
 network-automation-ra09/
 ├── README.md                          # Repository index
 └── labs/
-    ├── ra09-interface-description/    # Day-N: interface description automation
+    ├── ra09-interface-description/    # Day-N: interface description automation (tested)
     │   ├── automate_interface_desc.py
     │   ├── changes.yaml
     │   ├── report.json
     │   ├── requirements.txt
     │   └── README.md
+    ├── network-automation/            # Day-N: flexible multi-domain engine (feature branch)
+    │   ├── automate.py
+    │   ├── changes.yaml
+    │   ├── report.json
+    │   ├── requirements.txt
+    │   ├── README.md
+    │   └── handlers/
+    │       ├── interface_description.py
+    │       ├── interface_ip.py
+    │       ├── interface_switchport.py
+    │       ├── interface_state.py
+    │       ├── ospf.py
+    │       ├── static_routes.py
+    │       ├── vlan.py
+    │       ├── etherchannel.py
+    │       ├── dhcp_server.py
+    │       ├── dhcp_relay.py
+    │       └── hsrp.py
     └── ztp/                           # Day-0: Zero Touch Provisioning bootstrap
         ├── ztp.py
         └── README.md
 ```
 
-### 3.2 Lab: ra09-interface-description (Day-N)
+### 3.2 Lab: ra09-interface-description (Day-N, tested)
 
-This lab implements the core automation pattern for the project: a YAML-driven, idempotent configuration push using RESTCONF for reads and NETCONF for writes. Developed and tested against real Cisco IOS XE hardware in the RA09 rack.
+This lab implements the core automation pattern for the project: a YAML-driven, idempotent configuration push using RESTCONF for reads and NETCONF for writes. Developed and tested against real Cisco IOS XE hardware in the RA09 rack. This lab is the direct origin of the flexible engine in section 3.3 — the pattern is identical, the scope is extended.
 
 #### 3.2.1 Automation Workflow
 
@@ -308,6 +326,8 @@ The rack number `X` is the third octet of the IP. This means the same single `zt
 - RSA 2048-bit key (with IOS XE 16.8 compatibility check)
 - `ip ssh version 2`
 - VTY lines — SSH only
+- `no ip http server` — disables plaintext HTTP on port 80
+- `ip http secure-server` — enables HTTPS on port 443 (required for RESTCONF)
 - `netconf-yang`
 - `restconf`
 - `write memory`
@@ -332,13 +352,77 @@ Every step is logged to `bootflash:ztp.log` with timestamps. This file persists 
 more bootflash:ztp.log
 ```
 
+### 3.4 Lab: network-automation (Day-N, feature branch)
+
+Built directly on the pattern established in `ra09-interface-description`, the flexible engine generalises the single-domain approach into a universal dispatcher. The script itself never changes — only `changes.yaml` is edited to declare desired state for the day.
+
+#### 3.4.1 Architecture
+
+```
+changes.yaml (desired state)
+        │
+        ▼
+   automate.py (dispatcher)
+        │
+        ├── interface_description  → RESTCONF read → compare → NETCONF write → verify
+        ├── interface_ip           → RESTCONF read → compare → NETCONF write → verify
+        ├── interface_switchport   → RESTCONF read → compare → NETCONF write → verify
+        ├── interface_state        → RESTCONF read → compare → NETCONF write → verify
+        ├── ospf                   → RESTCONF read → compare → NETCONF write → verify
+        ├── static_route           → RESTCONF read → compare → NETCONF write → verify
+        ├── vlan                   → RESTCONF read → compare → NETCONF write → verify
+        ├── etherchannel           → RESTCONF read → compare → NETCONF write → verify
+        ├── dhcp_server            → RESTCONF read → compare → NETCONF write → verify
+        ├── dhcp_relay             → RESTCONF read → compare → NETCONF write → verify
+        └── hsrp                   → RESTCONF read → compare → NETCONF write → verify
+                                                        │
+                                                        ▼
+                                                  report.json
+```
+
+#### 3.4.2 Handler Registry
+
+Each domain is a self-contained module in `handlers/`. Adding a new domain requires two steps: create the handler file, register it in `HANDLERS` in `automate.py`. No other files change.
+
+| Handler | Domain | YANG path |
+|---|---|---|
+| `interface_description` | Interface descriptions | `native/interface/{type}={name}` |
+| `interface_ip` | IPv4 address assignment | `native/interface/{type}={name}/ip/address` |
+| `interface_switchport` | Access / trunk mode and VLANs | `native/interface/{type}={name}/switchport` |
+| `interface_state` | Shutdown / no shutdown | `native/interface/{type}={name}/shutdown` |
+| `ospf` | OSPF process, router-id, networks | `native/router/ospf={process_id}` |
+| `static_route` | IPv4 static routes | `native/ip/route` |
+| `vlan` | VLAN definitions on switches | `native/vlan/vlan-list` |
+| `etherchannel` | Port-channel and member interfaces | `native/interface/Port-channel={id}` |
+| `dhcp_server` | DHCP pools, exclusions, DNS, gateway | `native/ip/dhcp/pool={name}` |
+| `dhcp_relay` | ip helper-address on SVIs | `native/interface/{type}={name}/ip/helper-address` |
+| `hsrp` | Gateway redundancy | `native/interface/{type}={name}/standby` |
+
+#### 3.4.3 Idempotency and Error Handling
+
+Every handler follows the same four-step cycle: read current state via RESTCONF, compare against desired state, write only if a delta exists via NETCONF, verify via a second RESTCONF read. A failure in one task is recorded in `report.json` and the run continues — no single device failure aborts the rest.
+
+#### 3.4.4 Status Values
+
+| Status | Meaning |
+|---|---|
+| `success` | Change applied and verified |
+| `already_correct` | Desired state already present, no change made |
+| `interface_not_found` | RESTCONF returned 404 |
+| `read_failed` | RESTCONF GET failed |
+| `edit_failed` | NETCONF edit-config failed |
+| `verify_failed` | Post-change RESTCONF GET failed |
+| `verify_mismatch` | Change applied but verification returned unexpected value |
+| `unknown_type` | No handler registered for that change type |
+| `missing_type` | Change entry has no type field |
+
 ---
 
 ## 4. Full Architecture
 
 ### 4.1 Overview
 
-The complete solution is divided into three phases. The automation engine in `ra09-interface-description` is the foundation of Phase 3 and requires no redesign — only extension to cover more configuration domains.
+The complete solution is divided into three phases. The flexible automation engine in `network-automation` is the implementation of Phase 3 — built and ready for hardware validation on the feature branch.
 
 ### 4.2 Phase 1 — Day-0: Zero Touch Provisioning
 
@@ -377,15 +461,16 @@ MACs are recorded once during physical setup and entered into the school DHCP se
 
 ### 4.4 Phase 3 — Day-N: Configuration Push
 
-`changes.yaml` is expanded to all 10+ devices. The script runs from the Ubuntu automation controller and pushes the full desired state:
+The flexible engine in `labs/network-automation/` handles full desired-state push across all devices. `changes.yaml` declares the target state for all 10+ devices. `automate.py` runs from the Ubuntu automation controller and pushes the full desired state via 11 domain handlers:
 
-- Interface configuration (IP, descriptions, shutdown state)
+- Interface configuration (IP addresses, descriptions, shutdown state, switchport mode)
 - VLAN definitions on switches
 - Routing (OSPF, static routes, default route)
-- AAA and authentication
-- VRRP/HSRP gateway redundancy
+- EtherChannel port aggregation
+- DHCP server pools and relay
+- HSRP gateway redundancy
 
-Each domain uses a different YANG model but the same read-compare-write-verify pattern already implemented.
+Each handler uses a different YANG model but the same read-compare-write-verify pattern. The engine is on `feature/flexible-automation-engine` and pending hardware validation before merge to main.
 
 ### 4.5 Optional Extension — Firmware Version Enforcement
 
@@ -455,10 +540,22 @@ The Ubuntu server (VM on `LAB-DC-H-ESXi02`, confirmed available) acts as the cen
 
 ```bash
 git clone https://github.com/TimurKhakimovPXL/network-automation-ra09.git
-cd network-automation-ra09/labs/ra09-interface-description
+cd network-automation-ra09
+
+# Original ra09 lab (tested)
+cd labs/ra09-interface-description
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+# Flexible engine (feature branch)
+git checkout feature/flexible-automation-engine
+cd labs/network-automation
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# edit .env with credentials
 ```
 
 ### 6.3 ZTP Deployment
@@ -477,11 +574,19 @@ tftp://10.199.64.134/ztp.py
 
 ### 6.4 Running the Day-N Script
 
+**Original ra09 lab:**
 ```bash
+cd labs/ra09-interface-description
 python3 automate_interface_desc.py
 ```
 
-Reads `changes.yaml` from the working directory, writes `report.json` on completion.
+**Flexible engine:**
+```bash
+cd labs/network-automation
+python3 automate.py
+```
+
+Both read `changes.yaml` from the working directory and write `report.json` on completion.
 
 ### 6.5 Verifying Results
 

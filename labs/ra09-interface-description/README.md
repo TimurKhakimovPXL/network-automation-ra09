@@ -91,24 +91,39 @@ pip install -r requirements.txt
 
 ---
 
+## Environment Variables
+
+Credentials are loaded from a `.env` file in the repository root. Copy the example file and fill in your values:
+
+```bash
+cp ../../.env.example ../../.env
+```
+
+Then edit `.env`:
+
+```env
+LAB_USER=your_username
+LAB_PASS=your_password
+```
+
+> **Note:** `.env` is listed in `.gitignore` and will never be committed. Never share or commit this file.
+
+---
+
 ## Configuration
 
 Edit `changes.yaml` to declare your desired state. Each device entry supports multiple interface changes.
+Credentials are loaded from `.env` — do not add them here.
 
 ```yaml
 devices:
   - name: LAB-RA09-C01-R01
     host: 172.17.9.2
-    username: cisco
-    password: cisco
     changes:
       - interface_type: GigabitEthernet
         interface_name: "0/0/0"
         description: RA09-L management interface
 ```
-
-> **Note:** Credentials are stored in plaintext for lab purposes only.
-> In production, use environment variables or a secrets manager (e.g. Vault, Ansible Vault).
 
 ---
 
@@ -192,6 +207,7 @@ The script reads `changes.yaml` from the working directory and writes `report.js
 | `requests` | RESTCONF HTTP client |
 | `PyYAML` | Desired state file parsing |
 | `urllib3` | TLS warning suppression for self-signed certs |
+| `python-dotenv` | Load credentials from `.env` file |
 
 ---
 

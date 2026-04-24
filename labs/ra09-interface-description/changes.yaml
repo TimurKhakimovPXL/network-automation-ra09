@@ -1,7 +1,167 @@
+# changes.yaml — Desired state input for automate_interface_desc.py
+#
+# Credentials are loaded from .env — do not add username/password here.
+#
+# Structure:
+#   Each device entry requires:
+#     - name:  device hostname (for reporting)
+#     - host:  management IP (must be reachable on TCP/830 and TCP/443)
+#     - changes: list of interface changes to apply
+#
+# Addressing scheme (X = rack number):
+#   C01-R01 management IP: 172.17.X.2   (left side,  subnet 172.17.X.0/28)
+#   C02-R01 management IP: 172.17.X.66  (right side, subnet 172.17.X.64/28)
+#
+# Uncomment devices as DHCP reservations are confirmed with the lab supervisor.
+
 devices:
+
+  # ── Rack 1 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA01-C01-R01
+  #   host: 172.17.1.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA01-L management interface
+
+  # - name: LAB-RA01-C02-R01
+  #   host: 172.17.1.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA01-R management interface
+
+  # ── Rack 2 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA02-C01-R01
+  #   host: 172.17.2.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA02-L management interface
+
+  # - name: LAB-RA02-C02-R01
+  #   host: 172.17.2.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA02-R management interface
+
+  # ── Rack 3 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA03-C01-R01
+  #   host: 172.17.3.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA03-L management interface
+
+  # - name: LAB-RA03-C02-R01
+  #   host: 172.17.3.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA03-R management interface
+
+  # ── Rack 4 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA04-C01-R01
+  #   host: 172.17.4.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA04-L management interface
+
+  # - name: LAB-RA04-C02-R01
+  #   host: 172.17.4.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA04-R management interface
+
+  # ── Rack 5 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA05-C01-R01
+  #   host: 172.17.5.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA05-L management interface
+
+  # - name: LAB-RA05-C02-R01
+  #   host: 172.17.5.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA05-R management interface
+
+  # ── Rack 6 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA06-C01-R01
+  #   host: 172.17.6.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA06-L management interface
+
+  # - name: LAB-RA06-C02-R01
+  #   host: 172.17.6.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA06-R management interface
+
+  # ── Rack 7 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA07-C01-R01
+  #   host: 172.17.7.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA07-L management interface
+
+  # - name: LAB-RA07-C02-R01
+  #   host: 172.17.7.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA07-R management interface
+
+  # ── Rack 8 ─────────────────────────────────────────────────────────────────
+  # - name: LAB-RA08-C01-R01
+  #   host: 172.17.8.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA08-L management interface
+
+  # - name: LAB-RA08-C02-R01
+  #   host: 172.17.8.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA08-R management interface
+
+  # ── Rack 9 (confirmed working — tested against real hardware) ───────────────
   - name: LAB-RA09-C01-R01
     host: 172.17.9.2
     changes:
       - interface_type: GigabitEthernet
         interface_name: "0/0/0"
         description: RA09-L management interface
+
+  # - name: LAB-RA09-C02-R01
+  #   host: 172.17.9.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA09-R management interface
+
+  # ── Rack 10 ────────────────────────────────────────────────────────────────
+  # - name: LAB-RA10-C01-R01
+  #   host: 172.17.10.2
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA10-L management interface
+
+  # - name: LAB-RA10-C02-R01
+  #   host: 172.17.10.66
+  #   changes:
+  #     - interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA10-R management interface

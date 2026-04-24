@@ -27,8 +27,14 @@ from dotenv import load_dotenv
 # ── Handler registry ───────────────────────────────────────────────────────────
 # To add a new domain: import the module and add it here.
 from handlers import (
+    dhcp_relay,
+    dhcp_server,
     etherchannel,
+    hsrp,
     interface_description,
+    interface_ip,
+    interface_state,
+    interface_switchport,
     ospf,
     static_routes,
     vlan,
@@ -36,10 +42,16 @@ from handlers import (
 
 HANDLERS = {
     "interface_description": interface_description.handle,
+    "interface_ip":          interface_ip.handle,
+    "interface_switchport":  interface_switchport.handle,
+    "interface_state":       interface_state.handle,
     "ospf":                  ospf.handle,
     "static_route":          static_routes.handle,
     "vlan":                  vlan.handle,
     "etherchannel":          etherchannel.handle,
+    "dhcp_server":           dhcp_server.handle,
+    "dhcp_relay":            dhcp_relay.handle,
+    "hsrp":                  hsrp.handle,
 }
 
 CHANGES_FILE = "changes.yaml"

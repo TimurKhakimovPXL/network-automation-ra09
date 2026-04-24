@@ -1,282 +1,79 @@
-# Network Automation — Flexible Multi-Domain Engine
+# network-automation-ra09
 
-> Dispatcher-based, idempotent configuration engine for Cisco IOS XE using RESTCONF and NETCONF.
+> Automated network device configuration pipeline for Cisco IOS XE — PXL DEVNET / RA09.
 
----
-
-## Overview
-
-Universal automation engine for full network deployment. Desired state is declared in `changes.yaml`.
-The dispatcher routes each change to the correct domain handler. The script itself never changes —
-only the YAML does.
-
-Supports complete rack deployment: interfaces, routing, switching, DHCP, and gateway redundancy.
-
-Tested on: Cisco IOS XE ISR4200 (16.8+)
-
----
-
-## Workflow
-
-```
-changes.yaml (desired state)
-        │
-        ▼
-   automate.py (dispatcher)
-        │
-        ├── interface_description  → RESTCONF read → compare → NETCONF write → verify
-        ├── interface_ip           → RESTCONF read → compare → NETCONF write → verify
-        ├── interface_switchport   → RESTCONF read → compare → NETCONF write → verify
-        ├── interface_state        → RESTCONF read → compare → NETCONF write → verify
-        ├── ospf                   → RESTCONF read → compare → NETCONF write → verify
-        ├── static_route           → RESTCONF read → compare → NETCONF write → verify
-        ├── vlan                   → RESTCONF read → compare → NETCONF write → verify
-        ├── etherchannel           → RESTCONF read → compare → NETCONF write → verify
-        ├── dhcp_server            → RESTCONF read → compare → NETCONF write → verify
-        ├── dhcp_relay             → RESTCONF read → compare → NETCONF write → verify
-        └── hsrp                   → RESTCONF read → compare → NETCONF write → verify
-                                                        │
-                                                        ▼
-                                                  report.json
-```
+No CLI. No manual steps. Devices bootstrap themselves via ZTP, then receive full desired-state configuration over NETCONF and RESTCONF from a central Ubuntu automation controller.
 
 ---
 
 ## Repository Structure
 
 ```
-labs/network-automation/
-├── automate.py          # Universal entry point — run this
-├── changes.yaml         # Desired state — only file you edit day to day
-├── report.json          # Generated on each run, do not edit
-├── requirements.txt
-├── .env.example         # Copy to .env and fill in credentials
-└── handlers/
-    ├── interface_description.py
-    ├── interface_ip.py
-    ├── interface_switchport.py
-    ├── interface_state.py
-    ├── ospf.py
-    ├── static_routes.py
-    ├── vlan.py
-    ├── etherchannel.py
-    ├── dhcp_server.py
-    ├── dhcp_relay.py
-    └── hsrp.py
+network-automation-ra09/
+├── README.md                        # This file
+├── .env.example                     # Credential template — copy to .env
+└── labs/
+    ├── ra09-interface-description/  # Day-N: interface description automation (tested)
+    ├── network-automation/          # Day-N: flexible multi-domain engine (feature branch)
+    └── ztp/                         # Day-0: Zero Touch Provisioning bootstrap
 ```
 
 ---
 
-## Installation
+## Labs
+
+### ra09-interface-description
+Original single-domain automation lab. Tested against real hardware on rack RA09.
+Manages interface descriptions via RESTCONF (read) and NETCONF (write). Fully idempotent.
+
+```bash
+cd labs/ra09-interface-description
+python3 automate_interface_desc.py
+```
+
+### network-automation
+Flexible multi-domain engine built on the same pattern as the original lab.
+A single dispatcher routes each change to the correct handler based on the change type in `changes.yaml`.
+Supports 11 configuration domains — interfaces, routing, switching, DHCP, and gateway redundancy.
+The script never changes — only the YAML does.
 
 ```bash
 cd labs/network-automation
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# edit .env with your credentials
-```
-
----
-
-## Configuration
-
-Edit `changes.yaml` to declare desired state. Supported change types:
-
-### interface_description
-
-```yaml
-- type: interface_description
-  interface_type: GigabitEthernet
-  interface_name: "0/0/0"
-  description: RA09-L management interface
-```
-
-### interface_ip
-
-```yaml
-- type: interface_ip
-  interface_type: GigabitEthernet
-  interface_name: "0/0/1"
-  ip: 10.199.65.17
-  mask: 255.255.255.224
-```
-
-### interface_switchport
-
-```yaml
-# Access port
-- type: interface_switchport
-  interface_type: GigabitEthernet
-  interface_name: "1/0/3"
-  mode: access
-  access_vlan: 92
-
-# Trunk port
-- type: interface_switchport
-  interface_type: GigabitEthernet
-  interface_name: "1/0/24"
-  mode: trunk
-  native_vlan: 99
-  allowed_vlans: "91-93,99"
-```
-
-### interface_state
-
-```yaml
-- type: interface_state
-  interface_type: GigabitEthernet
-  interface_name: "0/0/1"
-  state: up       # up | down
-```
-
-### ospf
-
-```yaml
-- type: ospf
-  process_id: 1
-  router_id: 172.17.9.2
-  networks:
-    - prefix: 172.17.9.0
-      wildcard: 0.0.0.15
-      area: 0
-```
-
-### static_route
-
-```yaml
-- type: static_route
-  routes:
-    - prefix: 0.0.0.0
-      mask: 0.0.0.0
-      next_hop: 10.199.65.1
-      description: Default route via backbone
-```
-
-### vlan
-
-```yaml
-- type: vlan
-  vlans:
-    - id: 91
-      name: Management
-    - id: 92
-      name: Data_Users
-```
-
-### etherchannel
-
-```yaml
-- type: etherchannel
-  channel_id: 1
-  mode: active
-  protocol: lacp
-  description: Uplink to distribution
-  members:
-    - interface_type: GigabitEthernet
-      interface_name: "1/0/1"
-    - interface_type: GigabitEthernet
-      interface_name: "1/0/2"
-```
-
-### dhcp_server
-
-```yaml
-- type: dhcp_server
-  excluded:
-    - start: 172.17.9.1
-      end: 172.17.9.20
-  pools:
-    - name: RA09-L-Data
-      network: 172.17.9.16
-      mask: 255.255.255.240
-      default_router: 172.17.9.17
-      dns_servers:
-        - 10.199.64.66
-      lease_days: 1
-```
-
-### dhcp_relay
-
-```yaml
-- type: dhcp_relay
-  interface_type: Vlan
-  interface_name: "92"
-  helper_addresses:
-    - 10.199.64.66
-```
-
-### hsrp
-
-```yaml
-- type: hsrp
-  interface_type: GigabitEthernet
-  interface_name: "0/0/0"
-  group: 1
-  version: 2
-  priority: 110       # higher = preferred active router
-  preempt: true
-  virtual_ip: 172.17.9.1
-```
-
----
-
-## Usage
-
-```bash
 python3 automate.py
 ```
 
-Reads `changes.yaml`, writes `report.json` on completion.
+Supported change types: `interface_description`, `interface_ip`, `interface_switchport`,
+`interface_state`, `ospf`, `static_route`, `vlan`, `etherchannel`, `dhcp_server`, `dhcp_relay`, `hsrp`
+
+### ztp
+Day-0 bootstrap script that runs automatically on a wiped IOS XE device via DHCP option 67.
+Identifies the device from its DHCP-assigned IP, pushes hostname, credentials, SSH, NETCONF, and RESTCONF.
+No console access required. Not yet hardware tested.
 
 ---
 
-## Adding a New Domain
+## Infrastructure
 
-1. Create `handlers/<domain>.py` implementing `handle(device_params, device_name, change) -> dict`
-2. Import it and register it in `HANDLERS` in `automate.py`
+| Service | IP | Role |
+|---|---|---|
+| DHCP / DNS / NTP | 10.199.64.66 | IP assignment, name resolution, time sync |
+| TFTP | 10.199.64.134 | ZTP script delivery |
+| YANG Suite | 10.125.100.231:8443 | YANG model browser and NETCONF testing |
+| ESXi | 10.199.64.37 | Ubuntu automation controller VM |
 
-That's it — no other files change.
+Rack addressing (X = rack number): C01 mgmt `172.17.X.2/28`, C02 mgmt `172.17.X.66/28`
 
 ---
 
-## Output
+## Credentials
 
-```json
-{
-  "generated_at": "2026-04-24T10:00:00",
-  "total_tasks": 8,
-  "success": 6,
-  "already_correct": 2,
-  "failed": 0,
-  "results": [...]
-}
+Copy `.env.example` to `.env` in the repo root and fill in your values:
+
+```bash
+cp .env.example .env
 ```
 
-| Status | Meaning |
-|---|---|
-| `success` | Change applied and verified |
-| `already_correct` | Desired state already present, no change made |
-| `interface_not_found` | RESTCONF returned 404 for the interface |
-| `read_failed` | RESTCONF GET failed |
-| `edit_failed` | NETCONF edit-config failed |
-| `verify_failed` | Post-change RESTCONF GET failed |
-| `verify_mismatch` | Change applied but verification returned unexpected value |
-| `unknown_type` | No handler registered for that change type |
-| `missing_type` | Change entry has no type field |
-
----
-
-## Dependencies
-
-| Package | Purpose |
-|---|---|
-| `ncclient` | NETCONF client |
-| `requests` | RESTCONF HTTP client |
-| `PyYAML` | Desired state parsing |
-| `python-dotenv` | Credential loading from .env |
-| `urllib3` | TLS warning suppression for self-signed certs |
+`.env` is gitignored and never committed.
 
 ---
 
@@ -285,10 +82,10 @@ That's it — no other files change.
 - [RESTCONF (RFC 8040)](https://datatracker.ietf.org/doc/html/rfc8040)
 - [NETCONF (RFC 6241)](https://datatracker.ietf.org/doc/html/rfc6241)
 - [Cisco IOS XE YANG Models](https://github.com/YangModels/yang/tree/main/vendor/cisco/xe)
-- YANG model: `Cisco-IOS-XE-native`
+- [Cisco IOS XE Zero Touch Provisioning](https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/configuration/173/b_173_programmability_cg/zero_touch_provisioning.html)
 
 ---
 
 ## Course Context
 
-This lab is part of the **NetAcad DEVASC** (DevNet Associate) curriculum — PXL DEVNET / RA09.
+NetAcad DEVASC (DevNet Associate) — PXL University / DEVNET / RA09

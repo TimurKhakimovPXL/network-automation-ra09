@@ -1,40 +1,91 @@
-# Network Automation Labs
+# network-automation-ra09
 
-Python-based network automation labs from the **NetAcad DEVASC** curriculum, targeting Cisco IOS XE using model-driven programmability (NETCONF / RESTCONF / YANG).
+> Automated network device configuration pipeline for Cisco IOS XE — PXL DEVNET / RA09.
 
-## Labs
+No CLI. No manual steps. Devices bootstrap themselves via ZTP, then receive full desired-state configuration over NETCONF and RESTCONF from a central Ubuntu automation controller.
 
-| Lab | Description | Protocols |
-|-----|-------------|-----------|
-| [ra09-interface-description](labs/ra09-interface-description/README.md) | Idempotent interface description automation | RESTCONF · NETCONF |
-| [ztp](labs/ztp/README.md) | Zero Touch Provisioning — Day-0 bootstrap for wiped IOS XE devices | DHCP · TFTP · Guest Shell |
-
-## Stack
-
-- Python 3.8+
-- NETCONF (RFC 6241) via `ncclient`
-- RESTCONF (RFC 8040) via `requests`
-- YANG model: `Cisco-IOS-XE-native`
-- Desired state declared in YAML
-- Zero Touch Provisioning via IOS XE Guest Shell + DHCP option 67
+---
 
 ## Repository Structure
 
 ```
-labs/
-├── ra09-interface-description/   # RA09 – interface description automation (Day-N)
-└── ztp/                          # Zero Touch Provisioning bootstrap script (Day-0)
+network-automation-ra09/
+├── README.md                        # This file
+├── .env.example                     # Credential template — copy to .env
+└── labs/
+    ├── ra09-interface-description/  # Day-N: interface description automation (tested)
+    ├── network-automation/          # Day-N: flexible multi-domain engine (feature branch)
+    └── ztp/                         # Day-0: Zero Touch Provisioning bootstrap
 ```
 
-## Prerequisites
+---
 
-Each lab has its own `requirements.txt` and `README.md`. See the individual lab directory for setup and usage instructions.
+## Labs
 
-All labs assume a Cisco IOS XE device (16.8+) with NETCONF and RESTCONF enabled:
+### ra09-interface-description
+Original single-domain automation lab. Tested against real hardware on rack RA09.
+Manages interface descriptions via RESTCONF (read) and NETCONF (write). Fully idempotent.
 
+```bash
+cd labs/ra09-interface-description
+python3 automate_interface_desc.py
 ```
-netconf-yang
-restconf
+
+### network-automation
+Flexible multi-domain engine built on the same pattern as the original lab.
+A single dispatcher routes each change to the correct handler based on the change type in `changes.yaml`.
+Supports 11 configuration domains — interfaces, routing, switching, DHCP, and gateway redundancy.
+The script never changes — only the YAML does.
+
+```bash
+cd labs/network-automation
+python3 automate.py
 ```
 
-For ZTP labs, a DHCP server with option 67 support and a TFTP server are also required.
+Supported change types: `interface_description`, `interface_ip`, `interface_switchport`,
+`interface_state`, `ospf`, `static_route`, `vlan`, `etherchannel`, `dhcp_server`, `dhcp_relay`, `hsrp`
+
+### ztp
+Day-0 bootstrap script that runs automatically on a wiped IOS XE device via DHCP option 67.
+Identifies the device from its DHCP-assigned IP, pushes hostname, credentials, SSH, NETCONF, and RESTCONF.
+No console access required. Not yet hardware tested.
+
+---
+
+## Infrastructure
+
+| Service | IP | Role |
+|---|---|---|
+| DHCP / DNS / NTP | 10.199.64.66 | IP assignment, name resolution, time sync |
+| TFTP | 10.199.64.134 | ZTP script delivery |
+| YANG Suite | 10.125.100.231:8443 | YANG model browser and NETCONF testing |
+| ESXi | 10.199.64.37 | Ubuntu automation controller VM |
+
+Rack addressing (X = rack number): C01 mgmt `172.17.X.2/28`, C02 mgmt `172.17.X.66/28`
+
+---
+
+## Credentials
+
+Copy `.env.example` to `.env` in the repo root and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+`.env` is gitignored and never committed.
+
+---
+
+## Technologies
+
+- [RESTCONF (RFC 8040)](https://datatracker.ietf.org/doc/html/rfc8040)
+- [NETCONF (RFC 6241)](https://datatracker.ietf.org/doc/html/rfc6241)
+- [Cisco IOS XE YANG Models](https://github.com/YangModels/yang/tree/main/vendor/cisco/xe)
+- [Cisco IOS XE Zero Touch Provisioning](https://www.cisco.com/c/en/us/td/docs/ios-xml/ios/prog/configuration/173/b_173_programmability_cg/zero_touch_provisioning.html)
+
+---
+
+## Course Context
+
+NetAcad DEVASC (DevNet Associate) — PXL University / DEVNET / RA09

@@ -1,0 +1,91 @@
+# changes.yaml — Desired state for all devices
+#
+# Credentials come from .env (LAB_USER / LAB_PASS) — never put them here.
+#
+# Supported change types:
+#   interface_description — set interface description
+#   ospf                  — configure OSPF process, router-id, and networks
+#   static_route          — add static routes
+#   vlan                  — define VLANs on a switch
+#   etherchannel          — configure port-channel and member interfaces
+#
+# Edit this file for the day's desired state, then run:
+#   python3 automate.py
+
+devices:
+
+  # ── Rack 9 — C01 router (confirmed working against real hardware) ───────────
+  - name: LAB-RA09-C01-R01
+    host: 172.17.9.2
+    changes:
+
+      - type: interface_description
+        interface_type: GigabitEthernet
+        interface_name: "0/0/0"
+        description: RA09-L management interface
+
+      - type: interface_description
+        interface_type: GigabitEthernet
+        interface_name: "0/0/1"
+        description: RA09-L WAN uplink to LAB-BR-A-SW08
+
+      - type: static_route
+        routes:
+          - prefix: 0.0.0.0
+            mask: 0.0.0.0
+            next_hop: 172.17.9.1
+            description: Default route via rack gateway
+
+      - type: ospf
+        process_id: 1
+        router_id: 172.17.9.2
+        networks:
+          - prefix: 172.17.9.0
+            wildcard: 0.0.0.15
+            area: 0
+          - prefix: 10.199.65.0
+            wildcard: 0.0.0.31
+            area: 0
+
+  # ── Rack 9 — C02 router ────────────────────────────────────────────────────
+  # - name: LAB-RA09-C02-R01
+  #   host: 172.17.9.66
+  #   changes:
+  #     - type: interface_description
+  #       interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA09-R management interface
+  #
+  #     - type: ospf
+  #       process_id: 1
+  #       router_id: 172.17.9.66
+  #       networks:
+  #         - prefix: 172.17.9.64
+  #           wildcard: 0.0.0.15
+  #           area: 0
+
+  # ── Rack 9 — Access switch example ────────────────────────────────────────
+  # - name: LAB-RA09-A01-SW01
+  #   host: 172.17.9.4
+  #   changes:
+  #     - type: vlan
+  #       vlans:
+  #         - id: 91
+  #           name: Management
+  #         - id: 92
+  #           name: Data_Users
+  #         - id: 93
+  #           name: Voice_Users
+  #         - id: 99
+  #           name: Native
+  #
+  #     - type: etherchannel
+  #       channel_id: 1
+  #       mode: active
+  #       protocol: lacp
+  #       description: Uplink to LAB-RA09-C01-R01
+  #       members:
+  #         - interface_type: GigabitEthernet
+  #           interface_name: "1/0/1"
+  #         - interface_type: GigabitEthernet
+  #           interface_name: "1/0/2"

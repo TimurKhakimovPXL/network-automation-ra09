@@ -7,6 +7,13 @@ import yaml
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
+import os
+from dotenv import load_dotenv
+
+load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
+
+USERNAME = os.environ.get("LAB_USER", "cisco")
+PASSWORD = os.environ.get("LAB_PASS", "cisco")
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -29,8 +36,8 @@ def build_device_params(device):
     return {
         "host": device["host"],
         "port": device.get("port", 830),
-        "username": device["username"],
-        "password": device["password"],
+        "username": USERNAME,
+        "password": PASSWORD,
         "hostkey_verify": False,
         "device_params": {"name": "csr"},
         "allow_agent": False,
@@ -43,7 +50,7 @@ def build_restconf_base(device):
 
 
 def build_restconf_auth(device):
-    return HTTPBasicAuth(device["username"], device["password"])
+    return HTTPBasicAuth(USERNAME, PASSWORD)
 
 
 def restconf_get_interface(device, interface_type, interface_name):

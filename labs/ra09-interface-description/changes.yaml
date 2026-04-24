@@ -1,8 +1,6 @@
 devices:
   - name: LAB-RA09-C01-R01
     host: 172.17.9.2
-    username: cisco
-    password: cisco
     changes:
       - interface_type: GigabitEthernet
         interface_name: "0/0/0"

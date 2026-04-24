@@ -39,16 +39,20 @@ Log: bootflash:ztp.log (persists across reboots for troubleshooting)
 """
 
 import cli
+import os
 import re
 import sys
 from datetime import datetime
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-DOMAIN_NAME   = "data.labnet.local"
-ENABLE_SECRET = "cisco"
-ADMIN_USER    = "admin"
-ADMIN_PASS    = "cisco"
-LOG_PATH      = "/bootflash/ztp.log"
+# Credentials are read from environment variables.
+# For lab use, defaults are provided — override in production.
+
+DOMAIN_NAME   = os.environ.get("ZTP_DOMAIN",   "data.labnet.local")
+ENABLE_SECRET = os.environ.get("ZTP_SECRET",   "cisco")
+ADMIN_USER    = os.environ.get("ZTP_USER",     "admin")
+ADMIN_PASS    = os.environ.get("ZTP_PASS",     "cisco")
+LOG_PATH      = os.environ.get("ZTP_LOG_PATH", "/bootflash/ztp.log")
 
 # Management interface — ISR4200 uses Gig0/0/0 as the management-side port
 MGMT_INTERFACE = "GigabitEthernet0/0/0"

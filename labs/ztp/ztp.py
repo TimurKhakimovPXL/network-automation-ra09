@@ -246,6 +246,7 @@ def apply_config(device):
         "no ip http server",
 
         # ── Model-driven programmability ──────────────────────────────────────
+	"ip http secure-server",
         "netconf-yang",
         "restconf",
     ]

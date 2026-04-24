@@ -5,7 +5,7 @@ supervisor: Wim Leppens
 institution: PXL University of Applied Sciences
 group: DEVNET
 date: 2026-04-22
-status: in-progress
+status: active
 tags:
   - network-automation
   - devnet
@@ -25,8 +25,8 @@ repository: https://github.com/TimurKhakimovPXL/network-automation-ra09
 - [[#1. Project Overview]]
 - [[#2. Lab Infrastructure]]
 - [[#3. Current Work — The Automation Engine]]
-- [[#4. Proposed Solution — Full Architecture]]
-- [[#5. Open Questions]]
+- [[#4. Full Architecture]]
+- [[#5. Infrastructure Confirmation]]
 - [[#6. Installation and Usage]]
 - [[#7. References]]
 
@@ -42,7 +42,7 @@ The teacher currently configures all lab devices manually after each wipe. This 
 
 ### 1.2 Scope
 
-- **Day-0 bootstrap:** bring a wiped, unconfigured Cisco IOS XE device to a reachable, NETCONF/RESTCONF-enabled state automatically
+- **Day-0 bootstrap:** bring a wiped, unconfigured Cisco IOS XE device to a reachable, NETCONF/RESTCONF-enabled state automatically via ZTP
 - **Day-N configuration:** push full desired-state configuration to 10+ devices simultaneously using a YAML-driven Python automation engine
 - **Idempotency:** re-running the automation produces no unintended changes if the device is already in the desired state
 - **Reporting:** every run produces a structured JSON report documenting what changed, what was skipped, and what failed
@@ -61,6 +61,7 @@ The teacher currently configures all lab devices manually after each wipe. This 
 | PyYAML | Desired state file parsing |
 | TFTP | Bootstrap script delivery for ZTP |
 | Cisco IOS XE ZTP | On-boot auto-provisioning using DHCP option 67 |
+| IOS XE Guest Shell | Python execution environment on-device for ZTP |
 
 ---
 
@@ -77,9 +78,9 @@ A Data Center segment hosts shared infrastructure services used by all racks.
 | Service | IP Address | Role |
 |---|---|---|
 | DHCP / DNS / NTP | `10.199.64.66` | IP assignment, name resolution, time sync |
-| TFTP Server | `10.199.64.134` | Bootstrap script delivery for ZTP |
+| TFTP Server | `10.199.64.134` | ZTP bootstrap script delivery (`ztp.py`) |
 | YANG Suite | `10.125.100.231:8443` | YANG model browser and NETCONF testing |
-| ESXi Host | `10.199.64.37` | Virtualisation host (Ubuntu automation controller VM) |
+| ESXi Host | `10.199.64.37` | Virtualisation host — Ubuntu automation controller VM |
 
 Domain: `data.labnet.local`
 
@@ -108,11 +109,11 @@ Each router's uplink interface receives a static IP in the `10.199.65.0/27` rang
 
 The management interface connects to the local rack switch on the management VLAN. The first usable host address in the management subnet is assigned to the router.
 
-**RA09 example:** management subnet `172.17.9.0/28`, router management IP `172.17.9.2` — this is the address used in `changes.yaml` and confirmed working with the automation script.
+**RA09 example:** management subnet `172.17.9.0/28`, router management IP `172.17.9.2` — confirmed working against real hardware.
 
 ### 2.4 VLAN and Subnet Scheme
 
-Each rack gets its own VLAN and subnet block based on rack number X. The left half of the rack (L) and right half (R) each get four VLANs.
+Each rack gets its own VLAN and subnet block based on rack number X.
 
 #### RA0X-L (Left side)
 
@@ -136,8 +137,6 @@ Each rack gets its own VLAN and subnet block based on rack number X. The left ha
 
 #### IP Address Assignment Structure
 
-Within each subnet, addresses are allocated as follows:
-
 | Position | Assigned to |
 |---|---|
 | 1st | HSRP/VRRP default gateway |
@@ -151,43 +150,37 @@ Within each subnet, addresses are allocated as follows:
 
 ### 2.5 Physical Patching
 
-Each router's Gig 0/0/1 uplink is patched through to `LAB-BR-A-SW08` in the central rack via the patch panel:
-
 | Device | Router Port | Switch Port |
 |---|---|---|
 | LAB-RA09-C01-R01 | Gig 0/0/1 | LAB-BR-A-SW08 Fa 0/17 |
 | LAB-RA09-C02-R01 | Gig 0/0/1 | LAB-BR-A-SW08 Fa 0/18 |
 
-> [!TIP] Console Access
-> Console ports on the back of each device are the out-of-band access path. Whether these are patched through to a console server is a pending open question — see [[#5. Open Questions]].
-
 ---
 
 ## 3. Current Work — The Automation Engine
 
-### 3.1 Repository
+### 3.1 Repository Structure
 
 ```
 network-automation-ra09/
 ├── README.md                          # Repository index
 └── labs/
-    └── ra09-interface-description/
-        ├── automate_interface_desc.py # Main automation script
-        ├── changes.yaml               # Desired state input
-        ├── report.json                # Run output (auto-generated)
-        ├── requirements.txt           # Python dependencies
-        └── README.md                  # Lab documentation
+    ├── ra09-interface-description/    # Day-N: interface description automation
+    │   ├── automate_interface_desc.py
+    │   ├── changes.yaml
+    │   ├── report.json
+    │   ├── requirements.txt
+    │   └── README.md
+    └── ztp/                           # Day-0: Zero Touch Provisioning bootstrap
+        ├── ztp.py
+        └── README.md
 ```
 
-The repository follows a multi-lab structure where each lab lives in its own subdirectory under `labs/`. This allows the project to grow as additional labs are added without cluttering the root.
+### 3.2 Lab: ra09-interface-description (Day-N)
 
-### 3.2 Lab: ra09-interface-description
-
-This lab implements the core automation pattern for the project: a YAML-driven, idempotent configuration push using RESTCONF for reads and NETCONF for writes. It was developed and tested successfully against real Cisco IOS XE hardware in the RA09 rack.
+This lab implements the core automation pattern for the project: a YAML-driven, idempotent configuration push using RESTCONF for reads and NETCONF for writes. Developed and tested against real Cisco IOS XE hardware in the RA09 rack.
 
 #### 3.2.1 Automation Workflow
-
-The script executes the following steps for each device and interface change defined in `changes.yaml`:
 
 1. Read current interface state from the device via RESTCONF GET
 2. Compare the actual description against the desired description from YAML
@@ -197,8 +190,6 @@ The script executes the following steps for each device and interface change def
 6. Record the outcome (`success`, `already_correct`, or error) in `report.json`
 
 #### 3.2.2 File: `automate_interface_desc.py`
-
-The script is structured into clearly separated functions, each with a single responsibility:
 
 | Function | Responsibility |
 |---|---|
@@ -213,19 +204,15 @@ The script is structured into clearly separated functions, each with a single re
 
 #### 3.2.3 YANG Model and RESTCONF URL
 
-The script targets the `Cisco-IOS-XE-native` YANG model. The RESTCONF URL is constructed per interface:
-
 ```
 GET https://{host}/restconf/data/
     Cisco-IOS-XE-native:native/interface/
     {interface_type}={url_encoded_interface_name}
 ```
 
-The interface name is URL-encoded using `urllib.parse.quote()` to handle forward slashes in interface identifiers such as `0/0/0`.
+The interface name is URL-encoded using `urllib.parse.quote()` to handle forward slashes in identifiers such as `0/0/0`.
 
 #### 3.2.4 NETCONF Payload
-
-Configuration is applied using a NETCONF `edit-config` RPC targeting the running datastore:
 
 ```xml
 <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
@@ -242,8 +229,6 @@ Configuration is applied using a NETCONF `edit-config` RPC targeting the running
 
 #### 3.2.5 Error Handling
 
-The script handles errors per task without aborting the entire run. Each result carries a `status` field and an `error` field for diagnostics:
-
 | Status | Meaning |
 |---|---|
 | `success` | Change applied and verified via RESTCONF |
@@ -255,8 +240,6 @@ The script handles errors per task without aborting the entire run. Each result 
 | `verify_mismatch` | Change applied but verification returned unexpected value |
 
 #### 3.2.6 File: `changes.yaml`
-
-The desired state is declared in a YAML file. Each device entry supports multiple interface changes. The script iterates over all devices and all changes within each device.
 
 ```yaml
 devices:
@@ -274,8 +257,6 @@ devices:
 > Credentials are stored in plaintext for lab purposes only. In production, use environment variables or a secrets manager such as HashiCorp Vault or Ansible Vault.
 
 #### 3.2.7 File: `report.json`
-
-Every run produces a `report.json` file with a summary and per-task results. This file is machine-readable and can be consumed by a dashboard or alerting system in a future extension.
 
 ```json
 {
@@ -298,69 +279,117 @@ Every run produces a `report.json` file with a summary and per-task results. Thi
 }
 ```
 
-#### 3.2.8 File: `requirements.txt`
+### 3.3 Lab: ztp (Day-0)
+
+`ztp.py` is a Zero Touch Provisioning bootstrap script that runs automatically on a wiped IOS XE device the first time it boots. It requires no console access and no manual intervention.
+
+#### 3.3.1 How It Works
+
+When a wiped device boots, IOS XE has no startup config. It enters ZTP mode, sends a DHCP discover, and receives an IP address. If the DHCP server includes option 67 pointing to `tftp://10.199.64.134/ztp.py`, the device downloads and executes that script inside Guest Shell.
+
+#### 3.3.2 Device Identification — No Manual MAC Inventory
+
+The script identifies the device automatically from the DHCP-assigned IP using the PXL addressing scheme. No MAC address list is required in the script itself — MACs only need to be configured in the DHCP server for static reservations.
 
 ```
-ncclient
-requests
-PyYAML
-urllib3
+DHCP IP 172.17.X.2  → LAB-RA0X-C01-R01  (rack X, left side)
+DHCP IP 172.17.X.66 → LAB-RA0X-C02-R01  (rack X, right side)
+```
+
+The rack number `X` is the third octet of the IP. This means the same single `ztp.py` file on the TFTP server handles all 20 routers across all 10 racks with zero per-device customisation.
+
+#### 3.3.3 What the Script Configures
+
+- Hostname derived from rack and side
+- Enable secret and local admin credentials
+- Management interface IP (static, matching DHCP assignment)
+- Default route via rack gateway
+- `ip domain-name data.labnet.local`
+- RSA 2048-bit key (with IOS XE 16.8 compatibility check)
+- `ip ssh version 2`
+- VTY lines — SSH only
+- `netconf-yang`
+- `restconf`
+- `write memory`
+
+#### 3.3.4 IOS XE Version Compatibility
+
+| Feature | 16.8 | 17.3 |
+|---|---|---|
+| ZTP | Yes | Yes |
+| Guest Shell | Yes | Yes |
+| `cli` module | Yes | Yes |
+| NETCONF / RESTCONF | Yes | Yes |
+| RSA key gen in Guest Shell | Sometimes unreliable | Stable |
+
+The script handles the 16.8 RSA issue by checking whether a key already exists before attempting generation. If generation fails, it logs a warning and continues — NETCONF and RESTCONF work without SSH being fully configured.
+
+#### 3.3.5 Log File
+
+Every step is logged to `bootflash:ztp.log` with timestamps. This file persists across reboots. If ZTP fails, connect via console and run:
+
+```
+more bootflash:ztp.log
 ```
 
 ---
 
-## 4. Proposed Solution — Full Architecture
+## 4. Full Architecture
 
 ### 4.1 Overview
 
-The complete solution is divided into three phases that build on each other. The automation engine built in `ra09-interface-description` forms the foundation of Phase 3 and requires no redesign — only extension.
+The complete solution is divided into three phases. The automation engine in `ra09-interface-description` is the foundation of Phase 3 and requires no redesign — only extension to cover more configuration domains.
 
 ### 4.2 Phase 1 — Day-0: Zero Touch Provisioning
 
-When a device is wiped it has no IP address, no SSH, no NETCONF. It cannot be reached over the network. The Day-0 phase solves this using Cisco IOS XE's built-in Zero Touch Provisioning (ZTP) capability.
+> [!SUCCESS] Confirmed
+> DHCP option 67 is supported on the school DHCP server. ZTP is the confirmed Day-0 path. Ubuntu server is available on ESXi. Both will be configured together with the lab supervisor.
 
-ZTP works as follows: on first boot, IOS XE automatically sends a DHCP request. If the DHCP server responds with option 67 (bootfile-name), the device fetches that file from the TFTP server and executes it as a Python script inside the IOS XE Guest Shell environment.
+Boot sequence for a wiped device:
 
-The ZTP Python script pushes a minimal bootstrap configuration to the device:
-
-- Hostname
-- Enable secret and local user credentials
-- IP address on the management interface
-- SSH version 2 with RSA key generation
-- `netconf-yang` enabled
-- `restconf` enabled
-- VTY lines configured for SSH
-
-After the ZTP script completes, the device is reachable over the network and ready for Day-N configuration. No console access is required.
-
-> [!WARNING] Prerequisite
-> The school DHCP server must support adding option 67 pointing to the TFTP server at `10.199.64.134`. This is the primary open question pending confirmation from the lab supervisor — see [[#5. Open Questions]].
+```
+Device wiped — no config
+     |
+     v
+Powers on → DHCP discover on Gig0/0/0
+     |
+     v
+DHCP responds:
+  IP: 172.17.X.2 or 172.17.X.66 (static reservation by MAC)
+  option 67: tftp://10.199.64.134/ztp.py
+     |
+     v
+Guest Shell starts → ztp.py executes
+  Reads IP → derives rack + side
+  Pushes bootstrap config
+  Saves (write memory)
+  Logs to bootflash:ztp.log
+     |
+     v
+Device reachable via SSH / NETCONF / RESTCONF
+```
 
 ### 4.3 Phase 2 — Inventory Management
 
-After ZTP, each device has an IP address. For the Day-N automation to work reliably across 10+ devices, each device must have a stable, known IP. This is achieved using static DHCP reservations: each device's MAC address is mapped to a fixed IP in the DHCP server. The `changes.yaml` file is then stable across reboots and wipes.
+Static DHCP reservations map each device's MAC address to a fixed IP. This ensures the same IP survives every wipe and reprovision. `changes.yaml` remains stable and requires no updates after the initial setup.
 
-The MAC addresses are recorded once during the initial physical setup and entered into the DHCP server as reservations. From that point forward, the device always receives the same IP regardless of how many times it is wiped and reprovisioned.
+MACs are recorded once during physical setup and entered into the school DHCP server. The `ztp.py` script itself requires no MAC list.
 
 ### 4.4 Phase 3 — Day-N: Configuration Push
 
-This phase is implemented by the existing automation engine. With the inventory in place, `changes.yaml` is expanded to include all 10+ devices. The script is run from the Ubuntu automation controller and pushes the full desired state to every device.
+`changes.yaml` is expanded to all 10+ devices. The script runs from the Ubuntu automation controller and pushes the full desired state:
 
-The Day-N scope extends beyond interface descriptions to cover the full device desired state:
-
-- Interface configuration (IP addresses, descriptions, shutdown state)
+- Interface configuration (IP, descriptions, shutdown state)
 - VLAN definitions on switches
-- Routing configuration (OSPF, static routes, default route)
+- Routing (OSPF, static routes, default route)
 - AAA and authentication
 - VRRP/HSRP gateway redundancy
 
-Each configuration domain maps to a different YANG model and NETCONF payload, but the read-compare-write-verify pattern remains identical to what is already implemented.
+Each domain uses a different YANG model but the same read-compare-write-verify pattern already implemented.
 
 ### 4.5 Optional Extension — Firmware Version Enforcement
 
-If devices in the lab run different IOS XE versions, the automation can enforce a target version as a pre-step before Day-N configuration. The IOS XE NETCONF interface exposes YANG models for software image management (`Cisco-IOS-XE-install-oper`). The script checks the current version via RESTCONF, and if it does not match the target version, triggers an install RPC that pulls the image from the TFTP server at `10.199.64.134`, installs it, and reboots the device. The Day-N push then proceeds after the device comes back online.
-
-This step is conditionally executed only when a version mismatch is detected.
+The `Cisco-IOS-XE-install-oper` YANG model exposes software image management via NETCONF. If a device's IOS XE version does not match the target version, the script triggers an install RPC, pulls the image from TFTP at `10.199.64.134`, installs it, and reboots. Day-N config push proceeds after the device comes back online. Executed only when a version mismatch is detected.
 
 ### 4.6 Full Pipeline
 
@@ -369,14 +398,14 @@ DEVICE WIPED
      |
      v
 [PHASE 1 — DAY-0: ZTP]
-  DHCP request -> option 67 -> TFTP fetch bootstrap.py
-  Bootstrap script runs in Guest Shell
-  Device gets IP, SSH, NETCONF, RESTCONF
+  DHCP -> option 67 -> TFTP fetch ztp.py
+  Guest Shell executes ztp.py
+  Device gets hostname, IP, SSH, NETCONF, RESTCONF
      |
      v
 [OPTIONAL — FIRMWARE CHECK]
-  RESTCONF: read current IOS XE version
-  If mismatch: NETCONF install RPC -> TFTP image -> reboot
+  RESTCONF: read IOS XE version
+  Mismatch: NETCONF install RPC -> TFTP image -> reboot
   RESTCONF: verify version
      |
      v
@@ -386,7 +415,7 @@ DEVICE WIPED
     Compare       -> detect delta
     NETCONF write -> apply changes
     RESTCONF GET  -> verify
-    Write result to report.json
+    Write to report.json
      |
      v
 ALL DEVICES CONFIGURED — report.json generated
@@ -394,21 +423,19 @@ ALL DEVICES CONFIGURED — report.json generated
 
 ### 4.7 Ubuntu Automation Controller
 
-The Ubuntu server (VM on `LAB-DC-H-ESXi02`) acts as the central automation controller. It stores the automation scripts, the `changes.yaml` inventory, and the generated reports. The teacher or a student runs the Day-N script on demand or on a schedule. No tooling beyond the Python packages in `requirements.txt` is required.
+The Ubuntu server (VM on `LAB-DC-H-ESXi02`, confirmed available) acts as the central automation controller. It hosts the automation scripts, `changes.yaml`, and generated reports. The Day-N script is run on demand or on a schedule. No tooling beyond `requirements.txt` is required.
 
 ---
 
-## 5. Open Questions
+## 5. Infrastructure Confirmation
 
-> [!TODO] Pending — awaiting response from supervisor
+> [!SUCCESS] All infrastructure questions resolved — confirmed by Wim Leppens
 
-The following items are pending confirmation from the lab supervisor before the full architecture can be finalised:
-
-| # | Question | Impact |
+| # | Question | Answer |
 |---|---|---|
-| 1 | Can DHCP option 67 be set on the school DHCP server? | Determines whether ZTP is possible. If not, OOB console access is required for Day-0. |
-| 2 | Is an Ubuntu server VM available on the ESXi host and is access granted? | Required to host the automation controller and run the Day-N scripts centrally. |
-| 3 | If ZTP is not possible, is console access available via a console server in the rack? | Fallback Day-0 path using `pyserial` or Netmiko over OOB console. |
+| 1 | Can DHCP option 67 be set on the school DHCP server? | **Yes** — will be configured together next week |
+| 2 | Is an Ubuntu server VM available on the ESXi host? | **Yes** — will be set up together next week |
+| 3 | Console access if ZTP not possible? | **Not needed** — option 67 confirmed |
 
 ---
 
@@ -416,10 +443,10 @@ The following items are pending confirmation from the lab supervisor before the 
 
 ### 6.1 Prerequisites
 
-- Python 3.8 or later installed on the automation controller
+- Python 3.8 or later on the automation controller
 - Network reachability to device management IPs on TCP/830 (NETCONF) and TCP/443 (RESTCONF)
-- Cisco IOS XE 16.6+ on all target devices
-- The following enabled on each target device:
+- Cisco IOS XE 16.8+ on all target devices
+- The following enabled on each target device (applied automatically by ZTP):
   - `netconf-yang`
   - `restconf`
   - `ip ssh version 2`
@@ -434,21 +461,31 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 6.3 Configuration
+### 6.3 ZTP Deployment
 
-Edit `changes.yaml` to define the desired state for each device and interface. Add additional device entries for each router in scope. Ensure static DHCP reservations are in place so device IPs remain stable across reboots.
+Copy `ztp.py` to the TFTP server:
 
-### 6.4 Running the Script
+```bash
+cp labs/ztp/ztp.py /tftp/ztp.py
+```
+
+Configure DHCP option 67 on the school DHCP server to point to:
+
+```
+tftp://10.199.64.134/ztp.py
+```
+
+### 6.4 Running the Day-N Script
 
 ```bash
 python3 automate_interface_desc.py
 ```
 
-The script reads `changes.yaml` from the working directory and writes `report.json` on completion. Console output provides real-time status per device and interface.
+Reads `changes.yaml` from the working directory, writes `report.json` on completion.
 
 ### 6.5 Verifying Results
 
-Inspect `report.json` for a full summary of the run. The `total_tasks`, `success`, `already_correct`, and `failed` fields provide an immediate overview. The `results` array contains per-task detail including the old description, new description, and any error messages.
+Inspect `report.json`. The `total_tasks`, `success`, `already_correct`, and `failed` fields give an immediate overview. The `results` array contains per-task detail including old/new values and any error messages.
 
 ---
 

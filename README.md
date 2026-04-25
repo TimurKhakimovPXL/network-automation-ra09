@@ -58,7 +58,7 @@ No console access required. Not yet hardware tested.
 |---|---|---|
 | DHCP / DNS / NTP | 10.199.64.66 | IP assignment, name resolution, time sync |
 | TFTP | 10.199.64.134 | ZTP script delivery |
-| YANG Suite | 10.125.100.231:8443 | YANG model browser and NETCONF testing |
+| YANG Suite | 10.125.100.231:8443 | YANG model browser and NETCONF testing (also installed locally — see docs) |
 | ESXi | 10.199.64.37 | Ubuntu automation controller VM |
 
 Rack addressing (X = rack number): C01 mgmt `172.17.X.2/28`, C02 mgmt `172.17.X.66/28`
@@ -74,6 +74,27 @@ cp .env.example .env
 ```
 
 `.env` is gitignored and never committed.
+
+---
+## Current Status — 2026-04-26
+
+| Item | Status |
+|---|---|
+| `ra09-interface-description` | Tested against real hardware RA09 |
+| `network-automation` (flexible engine) | Built, bugs fixed, pending hardware validation |
+| `ztp` | Written, not yet hardware tested |
+| Ubuntu automation controller | Confirmed available on ESXi — setup with Leppens pending |
+| DHCP reservations (MAC → IP) | Not yet configured |
+| YANG Suite (local) | Running at `https://localhost:8443` via Podman |
+
+### Bugs Fixed (2026-04-26)
+All fixes are on `feature/flexible-automation-engine` and committed to the remote.
+
+- `automate.py` — ncclient device handler corrected from `"iosxe"` to `"csr"`
+- `automate.py` — `load_dotenv()` path made explicit and relative to script file
+- All interface handlers — NETCONF key element corrected from `<n>` to `<n>`
+- `handlers/hsrp.py` — HSRP priority comparison made type-safe with `int()` cast
+- `handlers/ospf.py` — RESTCONF read key corrected to `Cisco-IOS-XE-ospf:ospf` (confirmed from YangModels repo across IOS XE 16.8–17.5)
 
 ---
 

@@ -268,6 +268,22 @@ That's it — no other files change.
 
 ---
 
+## Known Issues Fixed — 2026-04-26
+
+The following bugs were identified and corrected prior to hardware validation.
+
+| File | Issue | Fix |
+|---|---|---|
+| `automate.py` | `device_params` used `"iosxe"` — wrong ncclient handler | Changed to `"csr"` |
+| `automate.py` | `load_dotenv()` resolved from CWD — breaks if not run from repo root | Explicit path relative to script file |
+| All interface handlers | `<n>` used as NETCONF key element instead of `<name>` | Replaced with `<name>` across all payloads |
+| `handlers/hsrp.py` | Priority extracted without `int()` cast — type mismatch on IOS XE 16.8 | Explicit `int()` cast on extraction and comparison |
+| `handlers/ospf.py` | RESTCONF key `Cisco-IOS-XE-native:ospf` never matched — OSPF module uses its own namespace | Fixed to `Cisco-IOS-XE-ospf:ospf`, confirmed across IOS XE 16.8–17.5 from YangModels repo |
+
+The OSPF fix is the most impactful: without it, the idempotency check always fails silently and OSPF config is pushed on every run regardless of device state.
+
+---
+
 ## Dependencies
 
 | Package | Purpose |

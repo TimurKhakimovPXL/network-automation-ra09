@@ -4,7 +4,7 @@ author: Timur Khakimov
 supervisor: Wim Leppens
 institution: PXL University of Applied Sciences
 group: DEVNET
-date: 2026-04-24
+date: 2026-04-26
 status: active
 tags:
   - network-automation
@@ -25,6 +25,7 @@ repository: https://github.com/TimurKhakimovPXL/network-automation-ra09
 - [[#1. Project Overview]]
 - [[#2. Lab Infrastructure]]
 - [[#3. Current Work — The Automation Engine]]
+- [[#3.5 Known Issues Fixed — 2026-04-26]]
 - [[#4. Full Architecture]]
 - [[#5. Infrastructure Confirmation]]
 - [[#6. Installation and Usage]]
@@ -237,7 +238,7 @@ The interface name is URL-encoded using `urllib.parse.quote()` to handle forward
   <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
     <interface>
       <GigabitEthernet>
-        <n>0/0/0</n>
+        <name>0/0/0</name>
         <description>RA09-L management interface</description>
       </GigabitEthernet>
     </interface>
@@ -263,16 +264,14 @@ The interface name is URL-encoded using `urllib.parse.quote()` to handle forward
 devices:
   - name: LAB-RA09-C01-R01
     host: 172.17.9.2
-    username: cisco
-    password: cisco
     changes:
       - interface_type: GigabitEthernet
         interface_name: "0/0/0"
         description: RA09-L management interface
 ```
 
-> [!WARNING] Credentials
-> Credentials are stored in plaintext for lab purposes only. In production, use environment variables or a secrets manager such as HashiCorp Vault or Ansible Vault.
+> [!NOTE] Credentials
+> Credentials are not stored in `changes.yaml`. They are loaded from `.env` via `python-dotenv` using `LAB_USER` and `LAB_PASS`. The `.env` file is gitignored and never committed. Copy `.env.example` to `.env` and fill in your values before running.
 
 #### 3.2.7 File: `report.json`
 
@@ -415,6 +414,91 @@ Every handler follows the same four-step cycle: read current state via RESTCONF,
 | `verify_mismatch` | Change applied but verification returned unexpected value |
 | `unknown_type` | No handler registered for that change type |
 | `missing_type` | Change entry has no type field |
+
+### 3.5 Known Issues Fixed — 2026-04-26
+
+The following bugs were identified by code review prior to hardware validation and corrected on `feature/flexible-automation-engine`.
+
+#### 3.5.1 NETCONF Key Element: `<n>` vs `<name>`
+
+**Affected files:** all handlers in `handlers/` except `ospf.py`, `static_routes.py`, `vlan.py`, `dhcp_server.py`
+
+The YANG model `Cisco-IOS-XE-native` uses `<name>` as the list key element for interface identification in NETCONF payloads. The flexible engine handlers were incorrectly using `<n>`. IOS XE may silently accept XML with unrecognised elements and return `<ok/>` without writing anything to the running config — meaning the script would report `success` for a change that never applied.
+
+Corrected payload (all interface handlers):
+
+```xml
+<GigabitEthernet>
+  <n>0/0/0</n>
+  <description>RA09-L management interface</description>
+</GigabitEthernet>
+```
+
+This is consistent with the reference implementation in `ra09-interface-description/automate_interface_desc.py`, which was tested against real hardware.
+
+#### 3.5.2 ncclient Device Handler: `iosxe` vs `csr`
+
+**Affected file:** `automate.py`
+
+ncclient uses a `device_params` dict to select an internal handler class that applies device-specific NETCONF framing workarounds. The dispatcher was using `{"name": "iosxe"}`. The correct value for Cisco IOS XE is `{"name": "csr"}` — named after the CSR1000v, the original IOS XE platform in ncclient's codebase.
+
+On IOS XE 16.8, the `csr` handler correctly negotiates the `]]>]]>` NETCONF 1.0 message delimiter. The `iosxe` alias has less field testing across older versions and can cause framing inconsistencies. The reference implementation uses `"csr"` and works.
+
+#### 3.5.3 `load_dotenv()` Path Resolution
+
+**Affected file:** `automate.py`
+
+Bare `load_dotenv()` resolves `.env` from the current working directory at runtime. If the script is invoked from any directory other than the repo root, credentials silently fail to load and the script exits with an error. Fixed to use an explicit path relative to the script file itself:
+
+```python
+load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
+```
+
+This mirrors the pattern in `automate_interface_desc.py` and works regardless of invocation directory.
+
+#### 3.5.4 HSRP Priority Type Consistency
+
+**Affected file:** `handlers/hsrp.py`
+
+On some IOS XE 16.8 builds, numeric YANG fields are returned as strings in RESTCONF JSON responses. The `_extract_hsrp()` function was returning `priority` as whatever type the JSON contained, while the desired state dict always produced an `int` from YAML. A type mismatch (`"110" != 110`) would cause the handler to always detect a delta and push HSRP config on every run even when the device was already correctly configured.
+
+Fixed by applying an explicit `int()` cast on both the extracted value and the desired value.
+
+---
+
+#### 3.5.5 Pre-Hardware Validation Checklist
+
+Before running the flexible engine against real hardware, confirm the following from the automation controller:
+
+**1. Verify ncclient connects and inspect device capabilities:**
+
+```python
+from ncclient import manager
+
+m = manager.connect(
+    host="172.17.9.2", port=830,
+    username="cisco", password="cisco",
+    hostkey_verify=False,
+    device_params={"name": "csr"},
+    allow_agent=False, look_for_keys=False,
+)
+for cap in m.server_capabilities:
+    print(cap)
+m.close_session()
+```
+
+**2. Check for candidate datastore support:**
+
+Look for `urn:ietf:params:netconf:capability:candidate:1.0` in the output. If present on all devices, candidate datastore is a viable future enhancement. If absent on any device, design around running as the write target.
+
+**3. Verify OSPF RESTCONF key name:**
+
+```bash
+curl -sk -u cisco:cisco   https://172.17.9.2/restconf/data/Cisco-IOS-XE-native:native/router/ospf=1   -H "Accept: application/yang-data+json" | python3 -m json.tool | head -20
+```
+
+Confirm whether the top-level key is `Cisco-IOS-XE-native:ospf` or `Cisco-IOS-XE-ospf:ospf`. The `ospf.py` handler uses the former — if the device returns the latter, update `_extract_ospf_state()` accordingly.
+
 
 ---
 

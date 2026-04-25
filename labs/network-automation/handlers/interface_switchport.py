@@ -151,7 +151,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str, change:
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
           <{iface_type}>
-            <n>{iface_name}</n>
+            <name>{iface_name}</name>
             {switchport_xml}
           </{iface_type}>
         </interface>

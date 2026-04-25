@@ -22,6 +22,7 @@ import sys
 from datetime import datetime
 
 import yaml
+from pathlib import Path
 from dotenv import load_dotenv
 
 # ── Handler registry ───────────────────────────────────────────────────────────
@@ -86,7 +87,7 @@ def build_device_params(device: dict, username: str, password: str) -> dict:
         "username":                username,
         "password":                password,
         "hostkey_verify":          False,
-        "device_params":           {"name": "iosxe"},
+        "device_params":           {"name": "csr"},
         "allow_agent":             False,
         "look_for_keys":           False,
     }
@@ -165,7 +166,7 @@ def write_report(results: list[dict]) -> None:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    load_dotenv()
+    load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
     username = os.getenv("LAB_USER")
     password = os.getenv("LAB_PASS")

@@ -65,7 +65,7 @@ def _extract_hsrp(response: requests.Response, iface_type: str, group: int) -> d
         if int(entry.get("group-number", -1)) == group:
             return {
                 "group":      group,
-                "priority":   entry.get("priority"),
+                "priority":   int(entry.get("priority", 100)),
                 "virtual_ip": entry.get("ip", {}).get("address"),
                 "preempt":    "preempt" in entry,
             }
@@ -99,7 +99,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
           <{iface_type}>
-            <n>{iface_name}</n>
+            <name>{iface_name}</name>
             <standby xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-hsrp">
               <version>{version}</version>
               <standby-list>
@@ -168,7 +168,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     desired = {
         "group":      group,
-        "priority":   change.get("priority", 100),
+        "priority":   int(change.get("priority", 100)),
         "virtual_ip": change["virtual_ip"],
         "preempt":    change.get("preempt", True),
     }

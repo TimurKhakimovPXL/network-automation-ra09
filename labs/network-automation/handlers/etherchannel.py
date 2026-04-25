@@ -87,7 +87,7 @@ def _build_member_xml(member: dict, channel_id: int, mode: str, protocol: str) -
 
     return f"""
         <{iface_type}>
-          <n>{iface_name}</n>
+          <name>{iface_name}</name>
           {channel_xml}
         </{iface_type}>"""
 
@@ -111,7 +111,7 @@ def _netconf_edit(device_params: dict, change: dict) -> None:
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
           <Port-channel>
-            <n>{channel_id}</n>
+            <name>{channel_id}</name>
             {desc_xml}
           </Port-channel>
           {member_xml}

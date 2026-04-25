@@ -63,7 +63,7 @@ def _netconf_edit(device_params: dict, interface_type: str, interface_name: str,
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
           <{interface_type}>
-            <n>{interface_name}</n>
+            <name>{interface_name}</name>
             <description>{description}</description>
           </{interface_type}>
         </interface>

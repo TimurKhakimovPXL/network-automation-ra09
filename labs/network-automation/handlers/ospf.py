@@ -2,7 +2,7 @@
 handlers/ospf.py
 
 Domain: OSPF process configuration
-YANG model: Cisco-IOS-XE-ospf-oper / Cisco-IOS-XE-native (router ospf)
+YANG model: Cisco-IOS-XE-ospf (namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-ospf)
 Read:  RESTCONF GET  → native/router/ospf={process_id}
 Write: NETCONF edit-config → <router><ospf> subtree
 
@@ -54,7 +54,7 @@ def _extract_ospf_state(response: requests.Response, process_id: int) -> dict | 
     or None if the process does not exist.
     """
     data  = response.json()
-    ospf  = data.get("Cisco-IOS-XE-native:ospf", {})
+    ospf  = data.get("Cisco-IOS-XE-ospf:ospf", {})
 
     router_id = ospf.get("router-id")
     networks  = [

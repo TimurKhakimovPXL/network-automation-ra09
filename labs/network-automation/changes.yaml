@@ -1,0 +1,186 @@
+# changes.yaml — Full rack deployment example
+#
+# Credentials come from .env (LAB_USER / LAB_PASS) — never put them here.
+#
+# This file shows a complete RA09 rack deployment:
+#   - C01-R01 router: IPs, routing, DHCP server, HSRP active
+#   - C02-R01 router: IPs, routing, DHCP server, HSRP standby
+#   - A01-SW01 switch: VLANs, access ports, uplink trunk, EtherChannel
+#
+# Uncomment devices as they are confirmed reachable.
+# Run: python3 automate.py
+
+devices:
+
+  # ── RA09 — C01-R01 (left router, HSRP active) ─────────────────────────────
+  - name: LAB-RA09-C01-R01
+    host: 172.17.9.2
+    changes:
+
+      - type: interface_description
+        interface_type: GigabitEthernet
+        interface_name: "0/0/0"
+        description: RA09-L management — 172.17.9.2/28
+
+      - type: interface_description
+        interface_type: GigabitEthernet
+        interface_name: "0/0/1"
+        description: RA09-L WAN uplink — LAB-BR-A-SW08 Fa0/17
+
+      - type: interface_ip
+        interface_type: GigabitEthernet
+        interface_name: "0/0/1"
+        ip: 10.199.65.17
+        mask: 255.255.255.224
+
+      - type: interface_state
+        interface_type: GigabitEthernet
+        interface_name: "0/0/1"
+        state: up
+
+      - type: static_route
+        routes:
+          - prefix: 0.0.0.0
+            mask: 0.0.0.0
+            next_hop: 10.199.65.1
+            description: Default route via backbone
+
+      - type: ospf
+        process_id: 1
+        router_id: 172.17.9.2
+        networks:
+          - prefix: 172.17.9.0
+            wildcard: 0.0.0.15
+            area: 0
+          - prefix: 172.17.9.16
+            wildcard: 0.0.0.15
+            area: 0
+          - prefix: 10.199.65.0
+            wildcard: 0.0.0.31
+            area: 0
+
+      - type: hsrp
+        interface_type: GigabitEthernet
+        interface_name: "0/0/0"
+        group: 1
+        version: 2
+        priority: 110
+        preempt: true
+        virtual_ip: 172.17.9.1
+
+      - type: dhcp_server
+        excluded:
+          - start: 172.17.9.1
+            end: 172.17.9.20
+        pools:
+          - name: RA09-L-Data
+            network: 172.17.9.16
+            mask: 255.255.255.240
+            default_router: 172.17.9.17
+            dns_servers:
+              - 10.199.64.66
+            lease_days: 1
+
+  # ── RA09 — C02-R01 (right router, HSRP standby) ───────────────────────────
+  # - name: LAB-RA09-C02-R01
+  #   host: 172.17.9.66
+  #   changes:
+  #     - type: interface_description
+  #       interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       description: RA09-R management — 172.17.9.66/28
+  #
+  #     - type: interface_ip
+  #       interface_type: GigabitEthernet
+  #       interface_name: "0/0/1"
+  #       ip: 10.199.65.18
+  #       mask: 255.255.255.224
+  #
+  #     - type: interface_state
+  #       interface_type: GigabitEthernet
+  #       interface_name: "0/0/1"
+  #       state: up
+  #
+  #     - type: static_route
+  #       routes:
+  #         - prefix: 0.0.0.0
+  #           mask: 0.0.0.0
+  #           next_hop: 10.199.65.1
+  #
+  #     - type: ospf
+  #       process_id: 1
+  #       router_id: 172.17.9.66
+  #       networks:
+  #         - prefix: 172.17.9.64
+  #           wildcard: 0.0.0.15
+  #           area: 0
+  #         - prefix: 10.199.65.0
+  #           wildcard: 0.0.0.31
+  #           area: 0
+  #
+  #     - type: hsrp
+  #       interface_type: GigabitEthernet
+  #       interface_name: "0/0/0"
+  #       group: 1
+  #       version: 2
+  #       priority: 100
+  #       preempt: true
+  #       virtual_ip: 172.17.9.65
+  #
+  #     - type: dhcp_server
+  #       excluded:
+  #         - start: 172.17.9.65
+  #           end: 172.17.9.84
+  #       pools:
+  #         - name: RA09-R-Data
+  #           network: 172.17.9.80
+  #           mask: 255.255.255.240
+  #           default_router: 172.17.9.81
+  #           dns_servers:
+  #             - 10.199.64.66
+  #           lease_days: 1
+
+  # ── RA09 — A01-SW01 (left access switch) ──────────────────────────────────
+  # - name: LAB-RA09-A01-SW01
+  #   host: 172.17.9.4
+  #   changes:
+  #     - type: vlan
+  #       vlans:
+  #         - id: 91
+  #           name: Management
+  #         - id: 92
+  #           name: Data_Users
+  #         - id: 93
+  #           name: Voice_Users
+  #         - id: 99
+  #           name: Native
+  #
+  #     - type: etherchannel
+  #       channel_id: 1
+  #       mode: active
+  #       protocol: lacp
+  #       description: Uplink to LAB-RA09-C01-R01
+  #       members:
+  #         - interface_type: GigabitEthernet
+  #           interface_name: "1/0/1"
+  #         - interface_type: GigabitEthernet
+  #           interface_name: "1/0/2"
+  #
+  #     - type: interface_switchport
+  #       interface_type: Port-channel
+  #       interface_name: "1"
+  #       mode: trunk
+  #       native_vlan: 99
+  #       allowed_vlans: "91-93,99"
+  #
+  #     - type: interface_switchport
+  #       interface_type: GigabitEthernet
+  #       interface_name: "1/0/3"
+  #       mode: access
+  #       access_vlan: 92
+  #
+  #     - type: dhcp_relay
+  #       interface_type: Vlan
+  #       interface_name: "92"
+  #       helper_addresses:
+  #         - 10.199.64.66

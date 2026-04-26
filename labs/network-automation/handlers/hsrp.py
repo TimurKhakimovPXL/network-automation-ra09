@@ -23,6 +23,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -58,16 +61,14 @@ def _extract_hsrp(response: requests.Response, iface_type: str, group: int) -> d
     key   = f"Cisco-IOS-XE-native:{iface_type}"
     iface = data.get(key, {})
 
-    standby_list = iface.get("standby", {}).get("standby-list", [])
-    if isinstance(standby_list, dict):
-        standby_list = [standby_list]
+    standby_list = norm.as_list(iface.get("standby", {}).get("standby-list"))
 
     for entry in standby_list:
-        if int(entry.get("group-number", -1)) == group:
+        if norm.normalize_int(entry.get("group-number")) == group:
             return {
                 "group":      group,
-                "priority":   int(entry.get("priority", 100)),
-                "virtual_ip": entry.get("ip", {}).get("address"),
+                "priority":   norm.normalize_int(entry.get("priority")) or 100,
+                "virtual_ip": norm.normalize_ipv4(entry.get("ip", {}).get("address")),
                 "preempt":    "preempt" in entry,
             }
     return None
@@ -127,7 +128,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     iface_type = change["interface_type"]
     iface_name = change["interface_name"]
-    group      = change["group"]
+    group      = norm.normalize_int(change["group"])
 
     result = {
         "device_name":    device_name,
@@ -140,6 +141,11 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         "verified":       False,
         "status":         None,
     }
+
+    if group is None:
+        result["status"] = "invalid_input"
+        result["error"]  = f"group must be an integer, got {change.get('group')!r}"
+        return result
 
     # 1. Read
     try:
@@ -169,9 +175,9 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     desired = {
         "group":      group,
-        "priority":   int(change.get("priority", 100)),
-        "virtual_ip": change["virtual_ip"],
-        "preempt":    change.get("preempt", True),
+        "priority":   norm.normalize_int(change.get("priority", 100)) or 100,
+        "virtual_ip": norm.normalize_ipv4(change["virtual_ip"]),
+        "preempt":    norm.normalize_bool(change.get("preempt", True)) if change.get("preempt") is not None else True,
     }
 
     if current and _states_match(current, desired):
@@ -204,6 +210,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = "HSRP state after write does not match desired"
+            _debug.capture(device_name, "hsrp", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

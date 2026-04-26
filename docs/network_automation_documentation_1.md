@@ -412,15 +412,84 @@ The `dhcp_relay` handler adds any helper addresses declared in `changes.yaml` th
 |---|---|
 | `success` | Change applied and verified |
 | `already_correct` | Desired state already present, no change made |
+| `skipped_due_to_dependency` | A `depends_on` prerequisite did not finish successfully — see 3.4.5 |
 | `interface_not_found` | RESTCONF returned 404 |
 | `read_failed` | RESTCONF GET failed |
 | `edit_failed` | NETCONF edit-config failed |
 | `verify_failed` | Post-change RESTCONF GET failed |
-| `verify_mismatch` | Change applied but verification returned unexpected value |
+| `verify_mismatch` | Change applied but verification returned unexpected value — debug capture written, see 3.4.6 |
 | `unknown_type` | No handler registered for that change type |
 | `missing_type` | Change entry has no type field |
+| `invalid_input` | A required field had an invalid value (e.g. non-integer where integer required) |
+| `handler_exception` | Handler raised an unexpected exception — full traceback recorded in result |
 
-### 3.5 Known Issues Fixed — 2026-04-26
+#### 3.4.5 Change Ordering and Dependencies
+
+**Order in `changes.yaml` is significant.** Changes execute in the order they appear in `device.changes`. The engine does not perform automatic dependency resolution; ordering is the operator's responsibility, expressed declaratively in YAML. This is the same model Ansible playbooks use, and is the right one for network configuration: the operator can reason about it, and there's no surprise from a solver picking a different order than expected.
+
+The canonical layer-bottom-up order for an IOS XE router is:
+
+1. `interface_description` — does not depend on anything else
+2. `interface_ip` — does not depend on anything else
+3. `interface_state` — depends on `interface_ip` (bringing an interface up before assigning its address risks a transient routing flap)
+4. `static_route` — depends on the egress interface being up
+5. `ospf` — depends on participating interfaces having IPs and being up
+6. `hsrp` — depends on the underlying interface being addressed and described
+7. `dhcp_server` — depends on the gateway being live (HSRP virtual IP for redundant designs)
+
+For switches: `vlan` first, then `etherchannel` and `interface_switchport` (both of which can reference the VLANs created above), then `dhcp_relay` (which references SVI interfaces).
+
+**Optional `id` and `depends_on` fields prevent cascade failures.**
+
+```yaml
+- id: c01-ip-wan
+  type: interface_ip
+  interface_type: GigabitEthernet
+  interface_name: "0/0/1"
+  ip: 10.199.65.17
+  mask: 255.255.255.224
+
+- id: c01-state-wan
+  type: interface_state
+  depends_on: [c01-ip-wan]
+  interface_type: GigabitEthernet
+  interface_name: "0/0/1"
+  state: up
+```
+
+When `depends_on` is present, the dispatcher checks each declared prerequisite before invoking the handler. If any prerequisite has a status outside `(success, already_correct)` the change is skipped and recorded with status `skipped_due_to_dependency`. The skip itself is also recorded as a non-success status, so any subsequent change depending on the skipped change will also be skipped — failures cascade only as far as the dependency chain.
+
+`id` is a free-form string, scoped per device. `depends_on` accepts either a single id or a list. Both are optional; changes without an `id` are still executed in document order, they simply cannot be referenced as a prerequisite.
+
+The benefit is operationally important: when `interface_ip` fails on a fresh device, `hsrp` and `ospf` for that interface no longer blunder ahead and either fail with confusing secondary errors or — worse — succeed against a half-configured interface in a degenerate state. The operator sees one root-cause failure and a list of skipped consequences.
+
+#### 3.4.6 Debug Capture
+
+When a handler returns `verify_mismatch`, it writes the raw RESTCONF response body to a file under `debug/<run-timestamp>/<device-name>/<seq>_<change-type>_verify.json`. The file contains the HTTP status, the request URL, the parsed JSON body (or first 8 KiB of text if not JSON), and a copy of the change definition that produced the mismatch.
+
+This is the diagnostic of last resort. When a comparison fails against real hardware, the raw response shows directly whether the device returned a single dict instead of a list, omitted a leaf that the parser expected, used a different key name than the YANG model documents, or normalised a value (e.g. lowercased a description, expanded an interface name). Without it, runtime debugging is guesswork against 20 devices.
+
+Verbose capture (capture every read, not just mismatches) can be enabled with `DEBUG_CAPTURE=1` in the environment. This is useful for the first hardware run against a new platform, then disabled afterwards. Debug capture failure is logged to stderr but never propagates back to the handler — a full disk should never break the automation.
+
+#### 3.4.7 Value Normalisation
+
+Cisco IOS XE returns RESTCONF/NETCONF values in shapes that don't always match how operators write them in `changes.yaml`. Without normalisation, a comparison can fail simply because the device returned `91` (int) and the YAML supplied `"91"` (str), or because the device omitted a YANG default leaf entirely while the YAML supplied an explicit value matching that default.
+
+`handlers/_normalize.py` centralises the canonicalisation rules. Both sides of every `_states_match` comparison — the value extracted from the RESTCONF response **and** the value built from the YAML change definition — pass through the same helper, so equal values compare equal regardless of source representation.
+
+| Helper | Purpose |
+|---|---|
+| `normalize_int(value)` | Coerce to int. `"91"` and `91` both → `91`. Returns `None` for non-numeric input |
+| `normalize_str(value)` | Coerce to stripped string. `"  desc  "` → `"desc"` |
+| `normalize_bool(value)` | Accept `True`/`"true"`/`"1"`/`1`. Returns `None` for unrecognised input — distinct from `False` |
+| `normalize_ipv4(value)` | Validate and canonicalise dotted-decimal. Rejects zero-padded octets per CVE-2021-29921 |
+| `normalize_mask(value)` | Canonicalise to dotted-decimal. Accepts both `"24"` and `"255.255.255.0"` |
+| `as_list(value)` | Coerce single-dict to list-of-one. Handles Cisco's RESTCONF quirk where a YANG list with exactly one entry returns as a dict instead of a list |
+| `normalize_iface_name(value)` | Strip type prefix. `"GigabitEthernet0/0/0"` → `"0/0/0"` |
+
+The `as_list` helper deserves emphasis: it is the single most common source of runtime parser failures against Cisco RESTCONF. Any handler that iterates a value extracted from a YANG list must wrap that value in `as_list()`, otherwise a device with one helper-address (or one VLAN, or one OSPF network) returns a dict that crashes a `for entry in value` loop with `TypeError: 'str' object is not subscriptable` or silently iterates dict keys instead of list entries.
+
+
 
 The following bugs were identified by code review prior to hardware validation and corrected on `feature/flexible-automation-engine`.
 
@@ -522,6 +591,44 @@ This was confirmed by inspecting `Cisco-IOS-XE-ospf.yang` directly from the Yang
 **Impact without fix:** `_extract_ospf_state()` always returned an empty dict. The handler always concluded OSPF was not configured and pushed a write on every run, making OSPF non-idempotent. The write itself was correct (NETCONF namespace was already right) but the read-compare phase was broken.
 
 The docstring was also corrected from `Cisco-IOS-XE-ospf-oper / Cisco-IOS-XE-native` to `Cisco-IOS-XE-ospf` with the explicit namespace URI.
+
+#### 3.5.7 Pre-Hardware Hardening — Normalisation, Defensive Casts, Dependency Tracking
+
+**Affected files:** all 11 handlers, `automate.py`, plus two new modules `handlers/_normalize.py` and `handlers/_debug.py`.
+
+External code review (ChatGPT) raised three concerns about runtime behaviour against real hardware that schema validation alone cannot catch: RESTCONF list-vs-dict shape ambiguity, value-normalisation drift between Cisco's representation and YAML-declared values, and cascade failures when a handler runs against a device whose prerequisite configuration silently failed earlier in the same run.
+
+These were addressed in five coordinated changes:
+
+1. **`handlers/_normalize.py` (new module).** Centralised value-normalisation helpers — `normalize_int`, `normalize_str`, `normalize_bool`, `normalize_ipv4`, `normalize_mask`, `as_list`, `normalize_iface_name`. Every `_extract_*` parser and every desired-state builder now passes values through these helpers before comparison. See section 3.4.7.
+
+2. **`as_list()` defensive casts at every list-iteration site.** Cisco RESTCONF returns single-entry YANG lists as a dict instead of a list. Without the cast, a device with one helper-address (or one VLAN, or one OSPF network) would crash the parser. Applied to `ospf.py` (networks), `vlan.py` (vlan-list), `static_routes.py` (route entries and fwd-list), `dhcp_server.py` (dns-server-list, default-router-list), `dhcp_relay.py` (helper-address, replacing the previous ad-hoc `isinstance` check), and `hsrp.py` (standby-list, also replacing an ad-hoc check). The pre-existing handlers that already had this defence were ported to use the centralised helper for consistency.
+
+3. **`depends_on` skip logic in `automate.py`.** The dispatcher now tracks per-device task outcomes by `id` and skips any later change whose declared prerequisites did not finish in `(success, already_correct)`. Skipped changes record a `skipped_due_to_dependency` status with the unmet prerequisite list, and propagate the skip to anything depending on them. Prevents `hsrp` running on an interface whose `interface_ip` failed earlier, and similar cascade hazards. See section 3.4.5.
+
+4. **Full traceback capture in `handler_exception` results.** When a handler raises, `automate.py` now records `traceback.format_exc()` in the result dict in addition to `str(e)`. Previously, an unattended run against 20 devices that hit `'NoneType' object has no attribute 'get'` somewhere in a handler had no way to identify which line failed.
+
+5. **`handlers/_debug.py` (new module).** When a handler returns `verify_mismatch`, the raw RESTCONF response body is captured to `debug/<run-timestamp>/<device>/<seq>_<change-type>_verify.json`. This is the diagnostic of last resort for runtime data-shape surprises — it shows directly what the device returned vs what the parser saw. See section 3.4.6.
+
+**Impact without these fixes:** The system would fail unpredictably on first hardware contact in ways that the engineer could not diagnose without manual `curl` against the device. With them, a first-run failure produces a structured report identifying root cause, contained cascade, and a debug artifact pinpointing the exact response body that triggered the mismatch. The cost of debugging the first hardware run drops from "guess and re-run" to "read the report and the debug folder."
+
+#### 3.5.8 `report.json` Schema Extension
+
+**Affected file:** `automate.py`
+
+The report aggregator now distinguishes `skipped` from `failed` in the top-level counters:
+
+```json
+{
+  "total_tasks":     12,
+  "success":         9,
+  "already_correct": 1,
+  "skipped":         2,
+  "failed":          0
+}
+```
+
+Previously, any status outside `(success, already_correct)` was lumped into `failed`. With dependency-aware skipping, this conflated genuine failures with consequences-of-failures, making it harder to read the report at a glance. The new `skipped` counter holds anything with status `skipped_due_to_dependency`; `failed` continues to count real errors.
 
 
 ### 3.6 YANG Suite — Local Installation

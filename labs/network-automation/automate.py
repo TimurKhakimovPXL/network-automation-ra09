@@ -19,10 +19,11 @@ Credentials are loaded from .env — never put them in changes.yaml.
 import json
 import os
 import sys
+import traceback
 from datetime import datetime
+from pathlib import Path
 
 import yaml
-from pathlib import Path
 from dotenv import load_dotenv
 
 # ── Handler registry ───────────────────────────────────────────────────────────
@@ -131,36 +132,45 @@ def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
         result.setdefault("device_name", device_name)
         return result
     except Exception as e:
-        # Handler raised an unexpected exception — record it, continue the run.
+        # Handler raised an unexpected exception — record full traceback,
+        # continue the run. Without the traceback, debugging unattended
+        # runs against many devices is miserable.
         return {
             "device_name": device_name,
             "type":        change_type,
             "status":      "handler_exception",
             "error":       str(e),
+            "traceback":   traceback.format_exc(),
         }
 
 
 # ── Report ─────────────────────────────────────────────────────────────────────
 
 def write_report(results: list[dict]) -> None:
-    success        = sum(1 for r in results if r.get("status") == "success")
-    already        = sum(1 for r in results if r.get("status") == "already_correct")
-    failed         = sum(1 for r in results if r.get("status") not in ("success", "already_correct"))
+    success = sum(1 for r in results if r.get("status") == "success")
+    already = sum(1 for r in results if r.get("status") == "already_correct")
+    skipped = sum(1 for r in results if r.get("status") == "skipped_due_to_dependency")
+    failed  = sum(
+        1 for r in results
+        if r.get("status") not in ("success", "already_correct", "skipped_due_to_dependency")
+    )
 
     report = {
-        "generated_at":   datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-        "total_tasks":    len(results),
-        "success":        success,
+        "generated_at":    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "total_tasks":     len(results),
+        "success":         success,
         "already_correct": already,
-        "failed":         failed,
-        "results":        results,
+        "skipped":         skipped,
+        "failed":          failed,
+        "results":         results,
     }
 
     with open(REPORT_FILE, "w") as f:
         json.dump(report, f, indent=2)
 
     log(f"Report written to {REPORT_FILE} "
-        f"({success} success, {already} already_correct, {failed} failed)")
+        f"({success} success, {already} already_correct, "
+        f"{skipped} skipped, {failed} failed)")
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -200,9 +210,44 @@ def main() -> None:
 
         device_params = build_device_params(device, username, password)
 
+        # Track per-device task outcomes by id so later changes can declare
+        # depends_on: <id> and be skipped if their prerequisite failed.
+        # This prevents cascade failures (e.g. HSRP running on an interface
+        # whose IP assignment failed earlier in the same run).
+        device_task_status: dict[str, str] = {}
+
         for change in changes:
+            # Skip if any declared prerequisite did not finish successfully.
+            depends_on = change.get("depends_on") or []
+            if isinstance(depends_on, str):
+                depends_on = [depends_on]
+
+            unmet = [
+                dep for dep in depends_on
+                if device_task_status.get(dep) not in ("success", "already_correct")
+            ]
+
+            if unmet:
+                result = {
+                    "device_name": device_name,
+                    "type":        change.get("type"),
+                    "id":          change.get("id"),
+                    "status":      "skipped_due_to_dependency",
+                    "error":       f"Prerequisite task(s) did not succeed: {unmet}",
+                }
+                all_results.append(result)
+                log(f"  [SKIP] {change.get('type')} — depends_on unmet: {unmet}")
+                # Record the skip so anything depending on this also skips
+                if change.get("id"):
+                    device_task_status[change["id"]] = "skipped_due_to_dependency"
+                continue
+
             result = dispatch(device_params, device_name, change)
             all_results.append(result)
+
+            # Record outcome for later depends_on resolution
+            if change.get("id"):
+                device_task_status[change["id"]] = result.get("status", "unknown")
 
             status = result.get("status", "unknown")
             if status == "success":

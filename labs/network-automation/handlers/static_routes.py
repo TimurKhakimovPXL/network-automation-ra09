@@ -22,6 +22,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -56,15 +59,15 @@ def _extract_routes(response: requests.Response) -> set[tuple]:
     routes = data.get("Cisco-IOS-XE-native:route", {})
 
     # IOS XE YANG represents the route table as a list under "ip-route-interface-forwarding-list"
-    entries = routes.get("ip-route-interface-forwarding-list", [])
+    entries = norm.as_list(routes.get("ip-route-interface-forwarding-list"))
 
     result = set()
     for entry in entries:
-        prefix   = entry.get("prefix")
-        mask     = entry.get("mask")
-        fwd_list = entry.get("fwd-list", [])
+        prefix   = norm.normalize_ipv4(entry.get("prefix"))
+        mask     = norm.normalize_mask(entry.get("mask"))
+        fwd_list = norm.as_list(entry.get("fwd-list"))
         for fwd in fwd_list:
-            next_hop = fwd.get("fwd")
+            next_hop = norm.normalize_ipv4(fwd.get("fwd"))
             if prefix and mask and next_hop:
                 result.add((prefix, mask, next_hop))
 
@@ -73,8 +76,13 @@ def _extract_routes(response: requests.Response) -> set[tuple]:
 
 def _desired_routes(change: dict) -> set[tuple]:
     return {
-        (r["prefix"], r["mask"], r["next_hop"])
+        (norm.normalize_ipv4(r["prefix"]),
+         norm.normalize_mask(r["mask"]),
+         norm.normalize_ipv4(r["next_hop"]))
         for r in change.get("routes", [])
+        if norm.normalize_ipv4(r["prefix"]) is not None
+        and norm.normalize_mask(r["mask"]) is not None
+        and norm.normalize_ipv4(r["next_hop"]) is not None
     }
 
 
@@ -163,7 +171,11 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
     # 3. Write — only push the missing routes (additive, idempotent)
     routes_to_add = [
         r for r in change.get("routes", [])
-        if (r["prefix"], r["mask"], r["next_hop"]) in missing
+        if (
+            norm.normalize_ipv4(r["prefix"]),
+            norm.normalize_mask(r["mask"]),
+            norm.normalize_ipv4(r["next_hop"]),
+        ) in missing
     ]
 
     try:
@@ -191,6 +203,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"{len(still_missing)} route(s) still missing after write"
+            _debug.capture(device_name, "static_route", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

@@ -29,6 +29,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -75,21 +78,25 @@ def _extract_switchport(response: requests.Response, iface_type: str) -> dict:
     elif "trunk" in mode_data:
         mode = "trunk"
 
+    access_vlan_raw = access_data.get("vlan", {}).get("vlan") if mode == "access" else None
+    native_vlan_raw = trunk_data.get("native", {}).get("vlan", {}).get("vlan-id") if mode == "trunk" else None
+    allowed_raw     = trunk_data.get("allowed", {}).get("vlan", {}).get("vlans") if mode == "trunk" else None
+
     return {
         "mode":          mode,
-        "access_vlan":   str(access_data.get("vlan", {}).get("vlan", "")) if mode == "access" else None,
-        "native_vlan":   str(trunk_data.get("native", {}).get("vlan", {}).get("vlan-id", "")) if mode == "trunk" else None,
-        "allowed_vlans": trunk_data.get("allowed", {}).get("vlan", {}).get("vlans", "") if mode == "trunk" else None,
+        "access_vlan":   norm.normalize_int(access_vlan_raw),
+        "native_vlan":   norm.normalize_int(native_vlan_raw),
+        "allowed_vlans": norm.normalize_str(allowed_raw),
     }
 
 
 def _desired_state(change: dict) -> dict:
-    mode = change["mode"]
+    mode = norm.normalize_str(change["mode"])
     return {
         "mode":          mode,
-        "access_vlan":   str(change.get("access_vlan", "")) if mode == "access" else None,
-        "native_vlan":   str(change.get("native_vlan", "")) if mode == "trunk" else None,
-        "allowed_vlans": str(change.get("allowed_vlans", "")) if mode == "trunk" else None,
+        "access_vlan":   norm.normalize_int(change.get("access_vlan")) if mode == "access" else None,
+        "native_vlan":   norm.normalize_int(change.get("native_vlan")) if mode == "trunk" else None,
+        "allowed_vlans": norm.normalize_str(change.get("allowed_vlans")) if mode == "trunk" else None,
     }
 
 
@@ -238,6 +245,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"Switchport state after write does not match desired"
+            _debug.capture(device_name, "interface_switchport", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

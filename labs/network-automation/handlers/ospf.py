@@ -26,6 +26,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -92,23 +95,23 @@ def _extract_ospf_state(response: requests.Response, pre_17: bool) -> dict | Non
 
     networks = [
         {
-            "prefix":   n.get("ip"),
-            "wildcard": n.get(wildcard_key),
+            "prefix":   norm.normalize_ipv4(n.get("ip")),
+            "wildcard": norm.normalize_ipv4(n.get(wildcard_key)),
             "area":     str(n.get("area", "")),
         }
-        for n in ospf.get("network", [])
+        for n in norm.as_list(ospf.get("network"))
     ]
 
-    return {"router_id": router_id, "networks": networks}
+    return {"router_id": norm.normalize_ipv4(router_id), "networks": networks}
 
 
 def _desired_state(change: dict) -> dict:
     return {
-        "router_id": change.get("router_id"),
+        "router_id": norm.normalize_ipv4(change.get("router_id")),
         "networks": [
             {
-                "prefix":   n["prefix"],
-                "wildcard": n["wildcard"],
+                "prefix":   norm.normalize_ipv4(n["prefix"]),
+                "wildcard": norm.normalize_ipv4(n["wildcard"]),
                 "area":     str(n["area"]),
             }
             for n in change.get("networks", [])
@@ -243,6 +246,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = "Post-write state does not match desired"
+            _debug.capture(device_name, "ospf", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

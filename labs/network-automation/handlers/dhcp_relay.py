@@ -34,6 +34,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -68,13 +71,16 @@ def _extract_helpers(response: requests.Response, iface_type: str) -> set[str]:
     data    = response.json()
     key     = f"Cisco-IOS-XE-native:{iface_type}"
     iface   = data.get(key, {})
-    helpers = iface.get("ip", {}).get("helper-address", [])
+    helpers = norm.as_list(iface.get("ip", {}).get("helper-address"))
 
-    # helper-address can be a list of dicts or a single dict
-    if isinstance(helpers, dict):
-        helpers = [helpers]
-
-    return {h.get("address") for h in helpers if h.get("address")}
+    # Normalise IPs to canonical form so e.g. '10.199.064.066' wouldn't
+    # masquerade as a different helper than '10.199.64.66'
+    return {
+        norm.normalize_ipv4(h.get("address"))
+        for h in helpers
+        if h.get("address") is not None
+        and norm.normalize_ipv4(h.get("address")) is not None
+    }
 
 
 # ── NETCONF ────────────────────────────────────────────────────────────────────
@@ -111,7 +117,11 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     iface_type      = change["interface_type"]
     iface_name      = change["interface_name"]
-    desired_helpers = set(change.get("helper_addresses", []))
+    desired_helpers = {
+        norm.normalize_ipv4(h)
+        for h in change.get("helper_addresses", [])
+        if norm.normalize_ipv4(h) is not None
+    }
 
     result = {
         "device_name":    device_name,
@@ -183,6 +193,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"Helper addresses still missing: {still_missing}"
+            _debug.capture(device_name, "dhcp_relay", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

@@ -21,6 +21,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -54,18 +57,18 @@ def _extract_vlans(response: requests.Response) -> dict[int, str]:
     """
     data  = response.json()
     vlan_data = data.get("Cisco-IOS-XE-native:vlan", {})
-    vlan_list = vlan_data.get("vlan-list", [])
+    vlan_list = norm.as_list(vlan_data.get("vlan-list"))
 
     return {
-        int(v["id"]): v.get("name", "")
+        norm.normalize_int(v["id"]): norm.normalize_str(v.get("name", "")) or ""
         for v in vlan_list
-        if "id" in v
+        if "id" in v and norm.normalize_int(v["id"]) is not None
     }
 
 
 def _desired_vlans(change: dict) -> dict[int, str]:
     return {
-        int(v["id"]): v.get("name", "")
+        norm.normalize_int(v["id"]): norm.normalize_str(v.get("name", "")) or ""
         for v in change.get("vlans", [])
     }
 
@@ -180,6 +183,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"{len(still_wrong)} VLAN(s) still incorrect after write"
+            _debug.capture(device_name, "vlan", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

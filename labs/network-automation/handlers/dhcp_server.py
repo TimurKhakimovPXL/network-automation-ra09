@@ -49,6 +49,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -111,41 +114,51 @@ def _extract_pool(response: requests.Response, pre_17: bool) -> dict | None:
     network = pool.get("network", {})
 
     if pre_17:
-        # 16.x: leaf-list default-router and dns-server
-        dns = pool.get("dns-server", [])
-        if isinstance(dns, str):
-            dns = [dns]
-        gw = pool.get("default-router", [])
-        if isinstance(gw, str):
-            gw = [gw]
+        # 16.x: leaf-list default-router and dns-server (may be single string,
+        # list, or absent — as_list handles all three uniformly)
+        dns = norm.as_list(pool.get("dns-server"))
+        gw  = norm.as_list(pool.get("default-router"))
     else:
         # 17.x: container default-router { leaf-list default-router-list }
         #        container dns-server { leaf-list dns-server-list }
-        gw_container = pool.get("default-router", {})
-        gw = gw_container.get("default-router-list", []) if isinstance(gw_container, dict) else []
-        if isinstance(gw, str):
-            gw = [gw]
+        gw_container  = pool.get("default-router")
+        dns_container = pool.get("dns-server")
+        gw  = norm.as_list(gw_container.get("default-router-list")) if isinstance(gw_container, dict) else []
+        dns = norm.as_list(dns_container.get("dns-server-list")) if isinstance(dns_container, dict) else []
 
-        dns_container = pool.get("dns-server", {})
-        dns = dns_container.get("dns-server-list", []) if isinstance(dns_container, dict) else []
-        if isinstance(dns, str):
-            dns = [dns]
+    # Canonicalise IP values so e.g. zero-padding or whitespace can't fool comparison
+    gw_clean  = [norm.normalize_ipv4(g) for g in gw if norm.normalize_ipv4(g) is not None]
+    dns_clean = [norm.normalize_ipv4(d) for d in dns if norm.normalize_ipv4(d) is not None]
 
     return {
-        "network":        network.get("number"),
-        "mask":           network.get("mask"),
-        "default_router": gw[0] if gw else None,
-        "dns_servers":    dns,
+        "network":        norm.normalize_ipv4(network.get("number")),
+        "mask":           norm.normalize_mask(network.get("mask")),
+        "default_router": gw_clean[0] if gw_clean else None,
+        "dns_servers":    dns_clean,
+    }
+
+
+def _normalize_desired_pool(pool: dict) -> dict:
+    """Return a copy of the YAML-declared pool with values canonicalised
+    so it can be compared apples-to-apples against _extract_pool output."""
+    return {
+        "name":           pool.get("name"),
+        "network":        norm.normalize_ipv4(pool.get("network")),
+        "mask":           norm.normalize_mask(pool.get("mask")),
+        "default_router": norm.normalize_ipv4(pool.get("default_router")),
+        "dns_servers":    [norm.normalize_ipv4(d) for d in pool.get("dns_servers", []) if norm.normalize_ipv4(d) is not None],
+        "lease_days":     norm.normalize_int(pool.get("lease_days", 1)) or 1,
     }
 
 
 def _pool_matches(current: dict, desired_pool: dict) -> bool:
-    desired_dns = sorted(desired_pool.get("dns_servers", []))
+    desired_norm = _normalize_desired_pool(desired_pool)
+    desired_dns = sorted(desired_norm.get("dns_servers", []))
     current_dns = sorted(current.get("dns_servers", []))
     return (
-        current["network"]        == desired_pool["network"] and
-        current["mask"]           == desired_pool["mask"] and
-        current["default_router"] == desired_pool["default_router"] and
+        current["network"]        == desired_norm["network"] and
+        current["mask"]           == desired_norm["mask"] and
+        current["default_router"] == desired_norm["default_router"] and
         current_dns               == desired_dns
     )
 
@@ -280,15 +293,19 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     # 3. Verify each pool
     failed_pools = []
+    last_verify_response = None
     for pool in pools:
         try:
             verify_response = _restconf_get_pool(device_params, pool["name"])
+            last_verify_response = verify_response
             if not verify_response.ok:
                 failed_pools.append(pool["name"])
                 continue
             verified = _extract_pool(verify_response, pre_17)
             if not verified or not _pool_matches(verified, pool):
                 failed_pools.append(pool["name"])
+                _debug.capture(device_name, "dhcp_server", "verify",
+                               verify_response, change={"pool": pool}, force=True)
         except Exception:
             failed_pools.append(pool["name"])
 

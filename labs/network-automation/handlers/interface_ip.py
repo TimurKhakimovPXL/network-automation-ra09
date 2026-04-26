@@ -20,6 +20,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -50,12 +53,13 @@ def _restconf_get(device_params: dict, iface_type: str, iface_name: str) -> requ
 
 
 def _extract_ip(response: requests.Response, iface_type: str) -> tuple[str | None, str | None]:
-    """Returns (ip, mask) of the primary address, or (None, None) if unset."""
+    """Returns (ip, mask) of the primary address normalised to canonical form,
+    or (None, None) if unset."""
     data  = response.json()
     key   = f"Cisco-IOS-XE-native:{iface_type}"
     iface = data.get(key, {})
     addr  = iface.get("ip", {}).get("address", {}).get("primary", {})
-    return addr.get("address"), addr.get("mask")
+    return norm.normalize_ipv4(addr.get("address")), norm.normalize_mask(addr.get("mask"))
 
 
 # ── NETCONF ────────────────────────────────────────────────────────────────────
@@ -104,9 +108,9 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     iface_type = change["interface_type"]
     iface_name = change["interface_name"]
-    desired_ip = change["ip"]
-    desired_mask = change["mask"]
-    secondary  = change.get("secondary", False)
+    desired_ip   = norm.normalize_ipv4(change["ip"])
+    desired_mask = norm.normalize_mask(change["mask"])
+    secondary  = norm.normalize_bool(change.get("secondary", False)) or False
 
     result = {
         "device_name":    device_name,
@@ -179,6 +183,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"Expected {desired_ip} {desired_mask}, got {verified_ip} {verified_mask}"
+            _debug.capture(device_name, "interface_ip", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

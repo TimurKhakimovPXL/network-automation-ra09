@@ -24,6 +24,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -56,7 +59,7 @@ def _extract_port_channel(response: requests.Response) -> dict | None:
     if not pc:
         return None
     return {
-        "description": pc.get("description"),
+        "description": norm.normalize_str(pc.get("description")),
     }
 
 
@@ -127,7 +130,7 @@ def _netconf_edit(device_params: dict, change: dict) -> None:
 # ── Handler ────────────────────────────────────────────────────────────────────
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
-    channel_id = change["channel_id"]
+    channel_id = norm.normalize_int(change["channel_id"])
 
     result = {
         "device_name": device_name,
@@ -137,6 +140,11 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         "verified":    False,
         "status":      None,
     }
+
+    if channel_id is None:
+        result["status"] = "invalid_input"
+        result["error"]  = f"channel_id must be an integer, got {change.get('channel_id')!r}"
+        return result
 
     # 1. Read
     try:
@@ -161,7 +169,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         result["error"]  = f"HTTP {response.status_code}"
         return result
 
-    desired_desc = change.get("description", "")
+    desired_desc = norm.normalize_str(change.get("description", "")) or ""
     current_desc = current.get("description") if current else None
 
     if current and current_desc == desired_desc:
@@ -197,6 +205,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = "Port-channel not found or description mismatch after write"
+            _debug.capture(device_name, "etherchannel", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

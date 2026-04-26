@@ -18,6 +18,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -52,7 +55,7 @@ def _extract_description(response: requests.Response, interface_type: str) -> st
     data = response.json()
     key  = f"Cisco-IOS-XE-native:{interface_type}"
     iface = data.get(key, {})
-    return iface.get("description")
+    return norm.normalize_str(iface.get("description"))
 
 
 # ── NETCONF ────────────────────────────────────────────────────────────────────
@@ -84,7 +87,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
     """
     iface_type  = change["interface_type"]
     iface_name  = change["interface_name"]
-    desired_desc = change["description"]
+    desired_desc = norm.normalize_str(change["description"]) or ""
 
     result = {
         "device_name":        device_name,
@@ -159,6 +162,9 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"Expected '{desired_desc}', got '{verified_desc}'"
+            # Force-capture so the operator can see exactly what RESTCONF returned
+            _debug.capture(device_name, "interface_description", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

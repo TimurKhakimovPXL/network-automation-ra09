@@ -22,6 +22,9 @@ import urllib3
 import requests
 from ncclient import manager
 
+from . import _normalize as norm
+from . import _debug
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 RESTCONF_HEADERS = {
@@ -94,7 +97,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str, state: 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     iface_type    = change["interface_type"]
     iface_name    = change["interface_name"]
-    desired_state = change["state"].lower()
+    desired_state = (norm.normalize_str(change["state"]) or "").lower()
 
     if desired_state not in ("up", "down"):
         return {
@@ -174,6 +177,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"Expected '{desired_state}', got '{verified_state}'"
+            _debug.capture(device_name, "interface_state", "verify",
+                           verify_response, change=change, force=True)
 
     except Exception as e:
         result["status"] = "verify_failed"

@@ -9,6 +9,18 @@ Write: NETCONF edit-config → <ip><helper-address> subtree
 Use this when the router is NOT the DHCP server but forwards client
 broadcasts to a central DHCP server (e.g. 10.199.64.66 in this lab).
 
+SEMANTICS — ADDITIVE (not converging):
+    This handler adds any helper addresses declared in changes.yaml that
+    are not already present. It does NOT remove helper addresses that exist
+    on the device but are absent from changes.yaml.
+
+    Rationale: helper-address entries are safe to accumulate and removing
+    an unexpected entry could silently break DHCP for clients on that
+    interface. The safe operation is add-only.
+
+    If you need to remove a helper address, do it via CLI and re-run
+    the automation to verify the desired entries are present.
+
 Change schema in changes.yaml:
     - type: dhcp_relay
       interface_type: Vlan
@@ -129,7 +141,8 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         result["error"]  = f"HTTP {response.status_code}"
         return result
 
-    # 2. Compare — only add missing helpers, never remove existing ones
+    # 2. Compare — additive semantics: only add missing helpers, never remove
+    # existing ones not in changes.yaml (removal must be done via CLI)
     try:
         current_helpers = _extract_helpers(response, iface_type)
     except Exception as e:

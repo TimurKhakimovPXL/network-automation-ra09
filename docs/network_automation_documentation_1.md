@@ -403,6 +403,9 @@ Each domain is a self-contained module in `handlers/`. Adding a new domain requi
 
 Every handler follows the same four-step cycle: read current state via RESTCONF, compare against desired state, write only if a delta exists via NETCONF, verify via a second RESTCONF read. A failure in one task is recorded in `report.json` and the run continues — no single device failure aborts the rest.
 
+**Exception — `dhcp_relay` uses additive semantics:**
+The `dhcp_relay` handler adds any helper addresses declared in `changes.yaml` that are not already present on the interface. It does **not** remove helper addresses that exist on the device but are absent from `changes.yaml`. This is a deliberate safety choice — removing an unexpected `ip helper-address` could silently break DHCP for clients on that interface. To remove a helper address, do it via CLI and re-run the automation to verify the desired entries are present.
+
 #### 3.4.4 Status Values
 
 | Status | Meaning |
@@ -431,7 +434,7 @@ Corrected payload (all interface handlers):
 
 ```xml
 <GigabitEthernet>
-  <n>0/0/0</n>
+  <name>0/0/0</name>
   <description>RA09-L management interface</description>
 </GigabitEthernet>
 ```

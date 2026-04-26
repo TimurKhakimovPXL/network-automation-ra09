@@ -1,5 +1,8 @@
-ncclient>=0.6.13
-requests>=2.31.0
-PyYAML>=6.0
-urllib3>=2.0.0
-python-dotenv>=1.0.0
+# Pinned dependencies — tested against Cisco IOS XE ISR4200 (16.8–17.3)
+# Update pins deliberately after testing, not automatically.
+# To install: pip install -r requirements.txt
+ncclient==0.6.15
+requests==2.31.0
+PyYAML==6.0.1
+urllib3==2.0.7
+python-dotenv==1.0.0

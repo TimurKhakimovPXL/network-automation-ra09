@@ -90,11 +90,18 @@ cp .env.example .env
 ### Bugs Fixed (2026-04-26)
 All fixes are on `feature/flexible-automation-engine` and committed to the remote.
 
+**Round 1 — Pre-hardware fixes:**
 - `automate.py` — ncclient device handler corrected from `"iosxe"` to `"csr"`
 - `automate.py` — `load_dotenv()` path made explicit and relative to script file
 - All interface handlers — NETCONF key element corrected from `<n>` to `<n>`
 - `handlers/hsrp.py` — HSRP priority comparison made type-safe with `int()` cast
-- `handlers/ospf.py` — RESTCONF read key corrected to `Cisco-IOS-XE-ospf:ospf` (confirmed from YangModels repo across IOS XE 16.8–17.5)
+- `handlers/ospf.py` — RESTCONF read key corrected to `Cisco-IOS-XE-ospf:ospf`
+
+**Round 2 — YANG model audit (16.8 and 17.3 verified from YangModels repo):**
+- `handlers/hsrp.py` — Removed wrong `xmlns` from `<standby>` (native submodule, not standalone module)
+- `handlers/ospf.py` — Version-aware branching: `<mask>` on 16.x, `<wildcard>` on 17.x
+- `handlers/dhcp_server.py` — Version-aware branching for default-router, dns-server, lease (all changed structure between 16.x and 17.x)
+- 7 other handlers confirmed correct against YANG source files
 
 ---
 

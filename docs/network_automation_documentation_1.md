@@ -27,6 +27,7 @@ repository: https://github.com/TimurKhakimovPXL/network-automation-ra09
 - [[#3. Current Work — The Automation Engine]]
 - [[#3.5 Known Issues Fixed — 2026-04-26]]
 - [[#3.6 YANG Suite — Local Installation]]
+- [[#3.7 YANG Model Audit — Handler Verification]]
 - [[#4. Full Architecture]]
 - [[#5. Infrastructure Confirmation]]
 - [[#6. Installation and Usage]]
@@ -590,6 +591,113 @@ IOS XE version directory naming: version dots removed, e.g. 16.8.1 → `1681`, 1
 
 Podman containers do not survive WSL2 restarts. Start them manually:
 
+```bash
+cd ~/YANG-suite/yangsuite/docker
+podman-compose up -d --no-build
+```
+
+
+### 3.7 YANG Model Audit — Handler Verification
+
+All 11 handlers were verified against the actual YANG model source files from the YangModels GitHub repository for both IOS XE 16.8.1 (`1681`) and 17.3.1 (`1731`). YANG files downloaded and inspected: `Cisco-IOS-XE-native`, `Cisco-IOS-XE-interfaces`, `Cisco-IOS-XE-ip`, `Cisco-IOS-XE-ospf`, `Cisco-IOS-XE-dhcp`, `Cisco-IOS-XE-ethernet`, `Cisco-IOS-XE-vlan`.
+
+#### 3.7.1 Audit Results
+
+| Handler | Status | Notes |
+|---|---|---|
+| `interface_description` | ✅ Clean | Native submodule, `<name>` key, `<description>` — correct |
+| `interface_ip` | ✅ Clean | Native submodule, `<ip><address><primary>` — correct |
+| `interface_state` | ✅ Clean | `<shutdown>` presence leaf — correct |
+| `interface_switchport` | ✅ Clean | `<switchport><mode>` — correct |
+| `dhcp_relay` | ✅ Clean | `<ip><helper-address>` — correct |
+| `etherchannel` | ✅ Clean | `channel-group` is in `Cisco-IOS-XE-ethernet` augmenting module — `xmlns` on `<channel-group>` is correct |
+| `vlan` | ✅ Clean | `vlan-list` key `id`, leaf `name` — identical on both versions |
+| `static_routes` | ✅ Clean | `ip-route-interface-forwarding-list`, `fwd-list`, `<name>` for description — confirmed from `Cisco-IOS-XE-ip` submodule |
+| `ospf` | ⚠️ Fixed | Version-aware branching added — see 3.7.2 |
+| `dhcp_server` | ⚠️ Fixed | Version-aware branching added — see 3.7.3 |
+| `hsrp` | ⚠️ Fixed | Wrong namespace removed — see 3.7.4 |
+
+Two additional items flagged for hardware validation:
+- `vlan.py` read key `Cisco-IOS-XE-native:vlan` — vlan content comes from augmenting module, response key may differ
+- `dhcp_server.py` read key `Cisco-IOS-XE-native:pool` — same concern
+
+#### 3.7.2 OSPF — Version-Aware Network Element
+
+**Affected file:** `handlers/ospf.py`
+
+The OSPF network list key and wildcard element name changed between IOS XE versions:
+
+| Version | YANG key | XML element |
+|---|---|---|
+| 16.x | `key "ip mask"` | `<mask>` |
+| 17.x | `key "ip wildcard"` | `<wildcard>` |
+
+The handler now detects the IOS XE version at runtime from NETCONF capabilities and branches both the read extraction and the NETCONF write accordingly:
+
+```python
+wildcard_key  = "mask" if pre_17 else "wildcard"   # for _extract_ospf_state
+wildcard_elem = "mask" if pre_17 else "wildcard"   # for _build_network_xml
+```
+
+The version is recorded in `report.json` as `ios_xe_pre_17` for each OSPF task.
+
+#### 3.7.3 DHCP Server — Version-Aware Pool Structure
+
+**Affected file:** `handlers/dhcp_server.py`
+
+Three structural changes between IOS XE versions affect the DHCP pool NETCONF payload:
+
+| Field | 16.x structure | 17.x structure |
+|---|---|---|
+| `default-router` | `leaf-list default-router` | `container default-router { leaf-list default-router-list }` |
+| `dns-server` | `leaf-list dns-server` | `container dns-server { leaf-list dns-server-list }` |
+| `lease` | `list lease { key "Days"; leaf Days }` | `container lease { choice { container lease-value { leaf days } } }` |
+
+**16.x XML:**
+```xml
+<default-router>172.17.9.17</default-router>
+<dns-server>10.199.64.66</dns-server>
+<lease><Days>1</Days></lease>
+```
+
+**17.x XML:**
+```xml
+<default-router>
+  <default-router-list>172.17.9.17</default-router-list>
+</default-router>
+<dns-server>
+  <dns-server-list>10.199.64.66</dns-server-list>
+</dns-server>
+<lease><lease-value><days>1</days></lease-value></lease>
+```
+
+Both `_extract_pool` (read) and `_build_pool_xml` (write) branch on the detected version. The version is recorded in `report.json` as `ios_xe_pre_17`.
+
+#### 3.7.4 HSRP — Wrong Namespace on `<standby>`
+
+**Affected file:** `handlers/hsrp.py`
+
+The NETCONF payload contained `xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-hsrp"` on the `<standby>` element. This namespace does not exist. The `standby` container is defined in `Cisco-IOS-XE-interfaces`, which is a **submodule** of `Cisco-IOS-XE-native`. Submodules inherit their parent module's namespace — `http://cisco.com/ns/yang/Cisco-IOS-XE-native`.
+
+Confirmed from YANG Suite node properties:
+```
+module:    Cisco-IOS-XE-native
+namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-native
+xpath:     /native/interface/GigabitEthernet/standby
+```
+
+This is identical on both 16.8 and 17.3 — no version branching needed. Fix: removed the `xmlns` attribute from `<standby>` entirely.
+
+#### 3.7.5 YANG Suite Usage for Verification
+
+YANG Suite was used to visually confirm the `standby` container namespace. The workflow:
+
+1. **Setup → YANG files and repositories → Git tab** — import `vendor/cisco/xe/1681` from `https://github.com/YangModels/yang`
+2. **Setup → YANG module sets** — create set with `Cisco-IOS-XE-native`, run **Locate and add missing dependencies**
+3. **Explore → YANG module explorer** — select the module set, load `Cisco-IOS-XE-native`
+4. Navigate to `interface/GigabitEthernet/standby` — Node Properties panel shows module and namespace
+
+Note: YANG Suite containers do not persist across WSL2 restarts. Restart with:
 ```bash
 cd ~/YANG-suite/yangsuite/docker
 podman-compose up -d --no-build

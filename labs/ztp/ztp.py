@@ -212,6 +212,14 @@ def apply_config(device):
 
     log(f"Pushing bootstrap config for {hostname}...")
 
+    # Warn loudly if either credential fell back to the lab default.
+    # In production the corresponding ZTP_* env var must be set on the
+    # Guest Shell environment before this script runs.
+    if ENABLE_SECRET == "cisco":
+        log("[WARN] Using default enable secret 'cisco' — set ZTP_SECRET in production")
+    if ADMIN_PASS == "cisco":
+        log("[WARN] Using default admin password 'cisco' — set ZTP_PASS in production")
+
     config = [
         # ── Identity ──────────────────────────────────────────────────────────
         f"hostname {hostname}",
@@ -229,6 +237,9 @@ def apply_config(device):
 
         # ── Default route ─────────────────────────────────────────────────────
         f"ip route 0.0.0.0 0.0.0.0 {gateway}",
+
+        # ── Time sync — required for accurate logs and any future TLS certs ──
+        "ntp server 10.199.64.66",
 
         # ── SSH ───────────────────────────────────────────────────────────────
         "ip ssh version 2",

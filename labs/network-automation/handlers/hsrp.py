@@ -2,9 +2,10 @@
 handlers/hsrp.py
 
 Domain: HSRP (Hot Standby Router Protocol) — gateway redundancy
-YANG model: Cisco-IOS-XE-hsrp (interface/{type}/standby)
-Read:  RESTCONF GET  → native/interface/{type}={name}/standby
-Write: NETCONF edit-config → <standby> subtree
+YANG model: Cisco-IOS-XE-interfaces (submodule of Cisco-IOS-XE-native)
+            standby container is in native namespace — no xmlns override needed
+Read:  RESTCONF GET  → native/interface/{type}={name}
+Write: NETCONF edit-config → <standby> subtree (native namespace)
 
 Change schema in changes.yaml:
     - type: hsrp
@@ -100,7 +101,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
         <interface>
           <{iface_type}>
             <name>{iface_name}</name>
-            <standby xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-hsrp">
+            <standby>
               <version>{version}</version>
               <standby-list>
                 <group-number>{group}</group-number>

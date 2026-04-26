@@ -6,6 +6,11 @@ YANG model: Cisco-IOS-XE-ospf (namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-
 Read:  RESTCONF GET  → native/router/ospf={process_id}
 Write: NETCONF edit-config → <router><ospf> subtree
 
+YANG structure differs between IOS XE versions:
+  16.x: network list key "ip mask"     → XML element <mask>
+  17.x: network list key "ip wildcard" → XML element <wildcard>
+Version is detected from NETCONF capabilities at runtime.
+
 Change schema in changes.yaml:
     - type: ospf
       process_id: 1
@@ -16,6 +21,7 @@ Change schema in changes.yaml:
           area: 0
 """
 
+import re
 import urllib3
 import requests
 from ncclient import manager
@@ -28,6 +34,31 @@ RESTCONF_HEADERS = {
 }
 
 RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/router/ospf={process_id}"
+
+
+# ── Version detection ──────────────────────────────────────────────────────────
+
+def _get_ios_xe_version(device_params: dict) -> float:
+    """
+    Connect to device and extract the IOS XE major.minor version from NETCONF
+    capabilities. Returns a float e.g. 16.8, 17.3.
+    Returns 17.0 as safe default if version cannot be determined
+    (17.x behaviour is the current standard going forward).
+    """
+    try:
+        with manager.connect(**device_params) as m:
+            for cap in m.server_capabilities:
+                match = re.search(r'ios-xe[_-](\d+)[._](\d+)', cap, re.IGNORECASE)
+                if match:
+                    return float(f"{match.group(1)}.{match.group(2)}")
+    except Exception:
+        pass
+    return 17.0
+
+
+def _is_pre_17(device_params: dict) -> bool:
+    """Returns True if device is running IOS XE 16.x."""
+    return _get_ios_xe_version(device_params) < 17.0
 
 
 # ── RESTCONF ───────────────────────────────────────────────────────────────────
@@ -48,19 +79,21 @@ def _restconf_get(device_params: dict, process_id: int) -> requests.Response:
     )
 
 
-def _extract_ospf_state(response: requests.Response, process_id: int) -> dict | None:
+def _extract_ospf_state(response: requests.Response, pre_17: bool) -> dict | None:
     """
-    Returns a normalised dict of the current OSPF state for comparison,
-    or None if the process does not exist.
+    Returns a normalised dict of the current OSPF state for comparison.
+    pre_17=True:  network list uses 'mask' element (16.x YANG)
+    pre_17=False: network list uses 'wildcard' element (17.x YANG)
     """
-    data  = response.json()
-    ospf  = data.get("Cisco-IOS-XE-ospf:ospf", {})
+    data         = response.json()
+    ospf         = data.get("Cisco-IOS-XE-ospf:ospf", {})
+    router_id    = ospf.get("router-id")
+    wildcard_key = "mask" if pre_17 else "wildcard"
 
-    router_id = ospf.get("router-id")
-    networks  = [
+    networks = [
         {
             "prefix":   n.get("ip"),
-            "wildcard": n.get("mask"),
+            "wildcard": n.get(wildcard_key),
             "area":     str(n.get("area", "")),
         }
         for n in ospf.get("network", [])
@@ -94,24 +127,29 @@ def _states_match(current: dict, desired: dict) -> bool:
 
 # ── NETCONF ────────────────────────────────────────────────────────────────────
 
-def _build_network_xml(networks: list[dict]) -> str:
+def _build_network_xml(networks: list[dict], pre_17: bool) -> str:
+    """
+    16.x: <mask> element (YANG key "ip mask")
+    17.x: <wildcard> element (YANG key "ip wildcard")
+    """
+    wildcard_elem = "mask" if pre_17 else "wildcard"
     lines = []
     for n in networks:
         lines.append(f"""
           <network>
             <ip>{n['prefix']}</ip>
-            <mask>{n['wildcard']}</mask>
+            <{wildcard_elem}>{n['wildcard']}</{wildcard_elem}>
             <area>{n['area']}</area>
           </network>""")
     return "".join(lines)
 
 
-def _netconf_edit(device_params: dict, change: dict) -> None:
-    process_id  = change["process_id"]
-    router_id   = change.get("router_id", "")
-    networks    = change.get("networks", [])
+def _netconf_edit(device_params: dict, change: dict, pre_17: bool) -> None:
+    process_id    = change["process_id"]
+    router_id     = change.get("router_id", "")
+    networks      = change.get("networks", [])
 
-    network_xml = _build_network_xml(networks)
+    network_xml   = _build_network_xml(networks, pre_17)
     router_id_xml = f"<router-id>{router_id}</router-id>" if router_id else ""
 
     payload = f"""
@@ -146,6 +184,10 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         "status":      None,
     }
 
+    # Detect IOS XE version once — determines YANG element names for this device
+    pre_17 = _is_pre_17(device_params)
+    result["ios_xe_pre_17"] = pre_17
+
     # 1. Read
     try:
         response = _restconf_get(device_params, process_id)
@@ -159,7 +201,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         current = None
     elif response.ok:
         try:
-            current = _extract_ospf_state(response, process_id)
+            current = _extract_ospf_state(response, pre_17)
         except Exception as e:
             result["status"] = "read_failed"
             result["error"]  = f"Failed to parse RESTCONF response: {e}"
@@ -178,7 +220,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     # 3. Write
     try:
-        _netconf_edit(device_params, change)
+        _netconf_edit(device_params, change, pre_17)
         result["changed"] = True
     except Exception as e:
         result["status"] = "edit_failed"
@@ -193,7 +235,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
             result["error"]  = f"Verify HTTP {verify_response.status_code}"
             return result
 
-        verified = _extract_ospf_state(verify_response, process_id)
+        verified = _extract_ospf_state(verify_response, pre_17)
 
         if _states_match(verified, desired):
             result["status"]   = "success"

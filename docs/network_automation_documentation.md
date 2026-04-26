@@ -26,6 +26,8 @@ repository: https://github.com/TimurKhakimovPXL/network-automation-ra09
 - [[#2. Lab Infrastructure]]
 - [[#3. Current Work — The Automation Engine]]
 - [[#3.5 Known Issues Fixed — 2026-04-26]]
+- [[#3.6 YANG Suite — Local Installation]]
+- [[#3.7 YANG Model Audit — Handler Verification]]
 - [[#4. Full Architecture]]
 - [[#5. Infrastructure Confirmation]]
 - [[#6. Installation and Usage]]
@@ -401,21 +403,93 @@ Each domain is a self-contained module in `handlers/`. Adding a new domain requi
 
 Every handler follows the same four-step cycle: read current state via RESTCONF, compare against desired state, write only if a delta exists via NETCONF, verify via a second RESTCONF read. A failure in one task is recorded in `report.json` and the run continues — no single device failure aborts the rest.
 
+**Exception — `dhcp_relay` uses additive semantics:**
+The `dhcp_relay` handler adds any helper addresses declared in `changes.yaml` that are not already present on the interface. It does **not** remove helper addresses that exist on the device but are absent from `changes.yaml`. This is a deliberate safety choice — removing an unexpected `ip helper-address` could silently break DHCP for clients on that interface. To remove a helper address, do it via CLI and re-run the automation to verify the desired entries are present.
+
 #### 3.4.4 Status Values
 
 | Status | Meaning |
 |---|---|
 | `success` | Change applied and verified |
 | `already_correct` | Desired state already present, no change made |
+| `skipped_due_to_dependency` | A `depends_on` prerequisite did not finish successfully — see 3.4.5 |
 | `interface_not_found` | RESTCONF returned 404 |
 | `read_failed` | RESTCONF GET failed |
 | `edit_failed` | NETCONF edit-config failed |
 | `verify_failed` | Post-change RESTCONF GET failed |
-| `verify_mismatch` | Change applied but verification returned unexpected value |
+| `verify_mismatch` | Change applied but verification returned unexpected value — debug capture written, see 3.4.6 |
 | `unknown_type` | No handler registered for that change type |
 | `missing_type` | Change entry has no type field |
+| `invalid_input` | A required field had an invalid value (e.g. non-integer where integer required) |
+| `handler_exception` | Handler raised an unexpected exception — full traceback recorded in result |
 
-### 3.5 Known Issues Fixed — 2026-04-26
+#### 3.4.5 Change Ordering and Dependencies
+
+**Order in `changes.yaml` is significant.** Changes execute in the order they appear in `device.changes`. The engine does not perform automatic dependency resolution; ordering is the operator's responsibility, expressed declaratively in YAML. This is the same model Ansible playbooks use, and is the right one for network configuration: the operator can reason about it, and there's no surprise from a solver picking a different order than expected.
+
+The canonical layer-bottom-up order for an IOS XE router is:
+
+1. `interface_description` — does not depend on anything else
+2. `interface_ip` — does not depend on anything else
+3. `interface_state` — depends on `interface_ip` (bringing an interface up before assigning its address risks a transient routing flap)
+4. `static_route` — depends on the egress interface being up
+5. `ospf` — depends on participating interfaces having IPs and being up
+6. `hsrp` — depends on the underlying interface being addressed and described
+7. `dhcp_server` — depends on the gateway being live (HSRP virtual IP for redundant designs)
+
+For switches: `vlan` first, then `etherchannel` and `interface_switchport` (both of which can reference the VLANs created above), then `dhcp_relay` (which references SVI interfaces).
+
+**Optional `id` and `depends_on` fields prevent cascade failures.**
+
+```yaml
+- id: c01-ip-wan
+  type: interface_ip
+  interface_type: GigabitEthernet
+  interface_name: "0/0/1"
+  ip: 10.199.65.17
+  mask: 255.255.255.224
+
+- id: c01-state-wan
+  type: interface_state
+  depends_on: [c01-ip-wan]
+  interface_type: GigabitEthernet
+  interface_name: "0/0/1"
+  state: up
+```
+
+When `depends_on` is present, the dispatcher checks each declared prerequisite before invoking the handler. If any prerequisite has a status outside `(success, already_correct)` the change is skipped and recorded with status `skipped_due_to_dependency`. The skip itself is also recorded as a non-success status, so any subsequent change depending on the skipped change will also be skipped — failures cascade only as far as the dependency chain.
+
+`id` is a free-form string, scoped per device. `depends_on` accepts either a single id or a list. Both are optional; changes without an `id` are still executed in document order, they simply cannot be referenced as a prerequisite.
+
+The benefit is operationally important: when `interface_ip` fails on a fresh device, `hsrp` and `ospf` for that interface no longer blunder ahead and either fail with confusing secondary errors or — worse — succeed against a half-configured interface in a degenerate state. The operator sees one root-cause failure and a list of skipped consequences.
+
+#### 3.4.6 Debug Capture
+
+When a handler returns `verify_mismatch`, it writes the raw RESTCONF response body to a file under `debug/<run-timestamp>/<device-name>/<seq>_<change-type>_verify.json`. The file contains the HTTP status, the request URL, the parsed JSON body (or first 8 KiB of text if not JSON), and a copy of the change definition that produced the mismatch.
+
+This is the diagnostic of last resort. When a comparison fails against real hardware, the raw response shows directly whether the device returned a single dict instead of a list, omitted a leaf that the parser expected, used a different key name than the YANG model documents, or normalised a value (e.g. lowercased a description, expanded an interface name). Without it, runtime debugging is guesswork against 20 devices.
+
+Verbose capture (capture every read, not just mismatches) can be enabled with `DEBUG_CAPTURE=1` in the environment. This is useful for the first hardware run against a new platform, then disabled afterwards. Debug capture failure is logged to stderr but never propagates back to the handler — a full disk should never break the automation.
+
+#### 3.4.7 Value Normalisation
+
+Cisco IOS XE returns RESTCONF/NETCONF values in shapes that don't always match how operators write them in `changes.yaml`. Without normalisation, a comparison can fail simply because the device returned `91` (int) and the YAML supplied `"91"` (str), or because the device omitted a YANG default leaf entirely while the YAML supplied an explicit value matching that default.
+
+`handlers/_normalize.py` centralises the canonicalisation rules. Both sides of every `_states_match` comparison — the value extracted from the RESTCONF response **and** the value built from the YAML change definition — pass through the same helper, so equal values compare equal regardless of source representation.
+
+| Helper | Purpose |
+|---|---|
+| `normalize_int(value)` | Coerce to int. `"91"` and `91` both → `91`. Returns `None` for non-numeric input |
+| `normalize_str(value)` | Coerce to stripped string. `"  desc  "` → `"desc"` |
+| `normalize_bool(value)` | Accept `True`/`"true"`/`"1"`/`1`. Returns `None` for unrecognised input — distinct from `False` |
+| `normalize_ipv4(value)` | Validate and canonicalise dotted-decimal. Rejects zero-padded octets per CVE-2021-29921 |
+| `normalize_mask(value)` | Canonicalise to dotted-decimal. Accepts both `"24"` and `"255.255.255.0"` |
+| `as_list(value)` | Coerce single-dict to list-of-one. Handles Cisco's RESTCONF quirk where a YANG list with exactly one entry returns as a dict instead of a list |
+| `normalize_iface_name(value)` | Strip type prefix. `"GigabitEthernet0/0/0"` → `"0/0/0"` |
+
+The `as_list` helper deserves emphasis: it is the single most common source of runtime parser failures against Cisco RESTCONF. Any handler that iterates a value extracted from a YANG list must wrap that value in `as_list()`, otherwise a device with one helper-address (or one VLAN, or one OSPF network) returns a dict that crashes a `for entry in value` loop with `TypeError: 'str' object is not subscriptable` or silently iterates dict keys instead of list entries.
+
+
 
 The following bugs were identified by code review prior to hardware validation and corrected on `feature/flexible-automation-engine`.
 
@@ -429,7 +503,7 @@ Corrected payload (all interface handlers):
 
 ```xml
 <GigabitEthernet>
-  <n>0/0/0</n>
+  <name>0/0/0</name>
   <description>RA09-L management interface</description>
 </GigabitEthernet>
 ```
@@ -491,13 +565,253 @@ m.close_session()
 
 Look for `urn:ietf:params:netconf:capability:candidate:1.0` in the output. If present on all devices, candidate datastore is a viable future enhancement. If absent on any device, design around running as the write target.
 
-**3. Verify OSPF RESTCONF key name:**
+**3. OSPF RESTCONF key — resolved, no manual check needed:**
 
-```bash
-curl -sk -u cisco:cisco   https://172.17.9.2/restconf/data/Cisco-IOS-XE-native:native/router/ospf=1   -H "Accept: application/yang-data+json" | python3 -m json.tool | head -20
+The correct key is `Cisco-IOS-XE-ospf:ospf` on all IOS XE versions from 16.8 through 17.x. This was confirmed by inspecting the `Cisco-IOS-XE-ospf.yang` module directly from the YangModels GitHub repository across versions `1681`, `1693`, `1711`, `1731`, and `1751`. The namespace `http://cisco.com/ns/yang/Cisco-IOS-XE-ospf` has never changed. The fix is documented in section 3.5.6 below.
+
+
+#### 3.5.6 OSPF RESTCONF JSON Key
+
+**Affected file:** `handlers/ospf.py`
+
+The `_extract_ospf_state()` function was reading the RESTCONF response using the wrong JSON key:
+
+```python
+# Wrong — always returned empty dict
+ospf = data.get("Cisco-IOS-XE-native:ospf", {})
+
+# Correct — matches the OSPF module namespace
+ospf = data.get("Cisco-IOS-XE-ospf:ospf", {})
 ```
 
-Confirm whether the top-level key is `Cisco-IOS-XE-native:ospf` or `Cisco-IOS-XE-ospf:ospf`. The `ospf.py` handler uses the former — if the device returns the latter, update `_extract_ospf_state()` accordingly.
+**Root cause:** OSPF configuration in IOS XE is defined in the augmenting module `Cisco-IOS-XE-ospf` with namespace `http://cisco.com/ns/yang/Cisco-IOS-XE-ospf`. When RESTCONF returns data from a path that resolves into an augmenting module, the JSON key uses that module's namespace — not the native namespace. The RESTCONF GET path `native/router/ospf={id}` resolves into the OSPF augmentation, so the top-level key is `Cisco-IOS-XE-ospf:ospf`.
+
+This was confirmed by inspecting `Cisco-IOS-XE-ospf.yang` directly from the YangModels GitHub repository across IOS XE versions `1681` (16.8.1), `1693` (16.9.3), `1711` (17.1.1), `1731` (17.3.1), and `1751` (17.5.1). The namespace is identical across all versions — no version branching is needed.
+
+**Impact without fix:** `_extract_ospf_state()` always returned an empty dict. The handler always concluded OSPF was not configured and pushed a write on every run, making OSPF non-idempotent. The write itself was correct (NETCONF namespace was already right) but the read-compare phase was broken.
+
+The docstring was also corrected from `Cisco-IOS-XE-ospf-oper / Cisco-IOS-XE-native` to `Cisco-IOS-XE-ospf` with the explicit namespace URI.
+
+#### 3.5.7 Pre-Hardware Hardening — Normalisation, Defensive Casts, Dependency Tracking
+
+**Affected files:** all 11 handlers, `automate.py`, plus two new modules `handlers/_normalize.py` and `handlers/_debug.py`.
+
+External code review (ChatGPT) raised three concerns about runtime behaviour against real hardware that schema validation alone cannot catch: RESTCONF list-vs-dict shape ambiguity, value-normalisation drift between Cisco's representation and YAML-declared values, and cascade failures when a handler runs against a device whose prerequisite configuration silently failed earlier in the same run.
+
+These were addressed in five coordinated changes:
+
+1. **`handlers/_normalize.py` (new module).** Centralised value-normalisation helpers — `normalize_int`, `normalize_str`, `normalize_bool`, `normalize_ipv4`, `normalize_mask`, `as_list`, `normalize_iface_name`. Every `_extract_*` parser and every desired-state builder now passes values through these helpers before comparison. See section 3.4.7.
+
+2. **`as_list()` defensive casts at every list-iteration site.** Cisco RESTCONF returns single-entry YANG lists as a dict instead of a list. Without the cast, a device with one helper-address (or one VLAN, or one OSPF network) would crash the parser. Applied to `ospf.py` (networks), `vlan.py` (vlan-list), `static_routes.py` (route entries and fwd-list), `dhcp_server.py` (dns-server-list, default-router-list), `dhcp_relay.py` (helper-address, replacing the previous ad-hoc `isinstance` check), and `hsrp.py` (standby-list, also replacing an ad-hoc check). The pre-existing handlers that already had this defence were ported to use the centralised helper for consistency.
+
+3. **`depends_on` skip logic in `automate.py`.** The dispatcher now tracks per-device task outcomes by `id` and skips any later change whose declared prerequisites did not finish in `(success, already_correct)`. Skipped changes record a `skipped_due_to_dependency` status with the unmet prerequisite list, and propagate the skip to anything depending on them. Prevents `hsrp` running on an interface whose `interface_ip` failed earlier, and similar cascade hazards. See section 3.4.5.
+
+4. **Full traceback capture in `handler_exception` results.** When a handler raises, `automate.py` now records `traceback.format_exc()` in the result dict in addition to `str(e)`. Previously, an unattended run against 20 devices that hit `'NoneType' object has no attribute 'get'` somewhere in a handler had no way to identify which line failed.
+
+5. **`handlers/_debug.py` (new module).** When a handler returns `verify_mismatch`, the raw RESTCONF response body is captured to `debug/<run-timestamp>/<device>/<seq>_<change-type>_verify.json`. This is the diagnostic of last resort for runtime data-shape surprises — it shows directly what the device returned vs what the parser saw. See section 3.4.6.
+
+**Impact without these fixes:** The system would fail unpredictably on first hardware contact in ways that the engineer could not diagnose without manual `curl` against the device. With them, a first-run failure produces a structured report identifying root cause, contained cascade, and a debug artifact pinpointing the exact response body that triggered the mismatch. The cost of debugging the first hardware run drops from "guess and re-run" to "read the report and the debug folder."
+
+#### 3.5.8 `report.json` Schema Extension
+
+**Affected file:** `automate.py`
+
+The report aggregator now distinguishes `skipped` from `failed` in the top-level counters:
+
+```json
+{
+  "total_tasks":     12,
+  "success":         9,
+  "already_correct": 1,
+  "skipped":         2,
+  "failed":          0
+}
+```
+
+Previously, any status outside `(success, already_correct)` was lumped into `failed`. With dependency-aware skipping, this conflated genuine failures with consequences-of-failures, making it harder to read the report at a glance. The new `skipped` counter holds anything with status `skipped_due_to_dependency`; `failed` continues to count real errors.
+
+
+### 3.6 YANG Suite — Local Installation
+
+YANG Suite is Cisco's open-source tool for browsing YANG models and testing NETCONF/RESTCONF queries against real devices. It was installed locally on the automation controller (WSL2/Ubuntu) using Podman during the 2026-04-26 session.
+
+#### 3.6.1 Installation
+
+```bash
+git clone https://github.com/CiscoDevNet/yangsuite.git
+cd yangsuite/docker
+
+# Generate self-signed SSL certificate
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+  -keyout nginx/nginx-self-signed.key \
+  -out nginx/nginx-self-signed.cert \
+  -subj "/C=BE/ST=Flanders/L=Hasselt/O=PXL/CN=localhost"
+
+# Create environment file
+cat > yangsuite/setup.env << 'EOF'
+DJANGO_SUPERUSER_USERNAME=admin
+DJANGO_SUPERUSER_PASSWORD=admin123
+DJANGO_SUPERUSER_EMAIL=admin@localhost.com
+DJANGO_SETTINGS_MODULE=yangsuite.settings.production
+SECRET_KEY=yangsuite-secret-key-change-in-production
+DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1
+EOF
+
+# Fix compose file to use local nginx image
+sed -i 's/image: nginx:latest/image: localhost\/nginx:latest/' docker-compose.yml
+
+# Allow unprivileged ports (WSL2)
+echo 'net.ipv4.ip_unprivileged_port_start=0' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# Build and start
+podman-compose build nginx
+podman-compose up -d --no-build
+
+# Create admin user (first run only)
+podman exec -it docker_yangsuite_1 bash -c \
+  "cd /usr/local/lib/python3.10/dist-packages/yangsuite && \
+   python3 manage.py createsuperuser --username admin --email admin@localhost.com"
+```
+
+#### 3.6.2 Access
+
+```
+URL:      https://localhost:8443
+Username: admin
+Password: admin123
+```
+
+Accept the self-signed certificate warning in the browser.
+
+#### 3.6.3 Loading IOS XE YANG Models
+
+In YANG Suite, go to **Setup → YANG files and repositories → New repository → Git tab** and import using:
+
+```
+Repository URL:              https://github.com/YangModels/yang
+Git branch:                  main
+Directory within repository: vendor/cisco/xe/1681
+Include subdirectories:      unchecked
+```
+
+IOS XE version directory naming: version dots removed, e.g. 16.8.1 → `1681`, 17.3.1 → `1731`.
+
+#### 3.6.4 Starting After Reboot
+
+Podman containers do not survive WSL2 restarts. Start them manually:
+
+```bash
+cd ~/YANG-suite/yangsuite/docker
+podman-compose up -d --no-build
+```
+
+
+### 3.7 YANG Model Audit — Handler Verification
+
+All 11 handlers were verified against the actual YANG model source files from the YangModels GitHub repository for both IOS XE 16.8.1 (`1681`) and 17.3.1 (`1731`). YANG files downloaded and inspected: `Cisco-IOS-XE-native`, `Cisco-IOS-XE-interfaces`, `Cisco-IOS-XE-ip`, `Cisco-IOS-XE-ospf`, `Cisco-IOS-XE-dhcp`, `Cisco-IOS-XE-ethernet`, `Cisco-IOS-XE-vlan`.
+
+#### 3.7.1 Audit Results
+
+| Handler | Status | Notes |
+|---|---|---|
+| `interface_description` | ✅ Clean | Native submodule, `<name>` key, `<description>` — correct |
+| `interface_ip` | ✅ Clean | Native submodule, `<ip><address><primary>` — correct |
+| `interface_state` | ✅ Clean | `<shutdown>` presence leaf — correct |
+| `interface_switchport` | ✅ Clean | `<switchport><mode>` — correct |
+| `dhcp_relay` | ✅ Clean | `<ip><helper-address>` — correct |
+| `etherchannel` | ✅ Clean | `channel-group` is in `Cisco-IOS-XE-ethernet` augmenting module — `xmlns` on `<channel-group>` is correct |
+| `vlan` | ✅ Clean | `vlan-list` key `id`, leaf `name` — identical on both versions |
+| `static_routes` | ✅ Clean | `ip-route-interface-forwarding-list`, `fwd-list`, `<name>` for description — confirmed from `Cisco-IOS-XE-ip` submodule |
+| `ospf` | ⚠️ Fixed | Version-aware branching added — see 3.7.2 |
+| `dhcp_server` | ⚠️ Fixed | Version-aware branching added — see 3.7.3 |
+| `hsrp` | ⚠️ Fixed | Wrong namespace removed — see 3.7.4 |
+
+Two additional items flagged for hardware validation:
+- `vlan.py` read key `Cisco-IOS-XE-native:vlan` — vlan content comes from augmenting module, response key may differ
+- `dhcp_server.py` read key `Cisco-IOS-XE-native:pool` — same concern
+
+#### 3.7.2 OSPF — Version-Aware Network Element
+
+**Affected file:** `handlers/ospf.py`
+
+The OSPF network list key and wildcard element name changed between IOS XE versions:
+
+| Version | YANG key | XML element |
+|---|---|---|
+| 16.x | `key "ip mask"` | `<mask>` |
+| 17.x | `key "ip wildcard"` | `<wildcard>` |
+
+The handler now detects the IOS XE version at runtime from NETCONF capabilities and branches both the read extraction and the NETCONF write accordingly:
+
+```python
+wildcard_key  = "mask" if pre_17 else "wildcard"   # for _extract_ospf_state
+wildcard_elem = "mask" if pre_17 else "wildcard"   # for _build_network_xml
+```
+
+The version is recorded in `report.json` as `ios_xe_pre_17` for each OSPF task.
+
+#### 3.7.3 DHCP Server — Version-Aware Pool Structure
+
+**Affected file:** `handlers/dhcp_server.py`
+
+Three structural changes between IOS XE versions affect the DHCP pool NETCONF payload:
+
+| Field | 16.x structure | 17.x structure |
+|---|---|---|
+| `default-router` | `leaf-list default-router` | `container default-router { leaf-list default-router-list }` |
+| `dns-server` | `leaf-list dns-server` | `container dns-server { leaf-list dns-server-list }` |
+| `lease` | `list lease { key "Days"; leaf Days }` | `container lease { choice { container lease-value { leaf days } } }` |
+
+**16.x XML:**
+```xml
+<default-router>172.17.9.17</default-router>
+<dns-server>10.199.64.66</dns-server>
+<lease><Days>1</Days></lease>
+```
+
+**17.x XML:**
+```xml
+<default-router>
+  <default-router-list>172.17.9.17</default-router-list>
+</default-router>
+<dns-server>
+  <dns-server-list>10.199.64.66</dns-server-list>
+</dns-server>
+<lease><lease-value><days>1</days></lease-value></lease>
+```
+
+Both `_extract_pool` (read) and `_build_pool_xml` (write) branch on the detected version. The version is recorded in `report.json` as `ios_xe_pre_17`.
+
+#### 3.7.4 HSRP — Wrong Namespace on `<standby>`
+
+**Affected file:** `handlers/hsrp.py`
+
+The NETCONF payload contained `xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-hsrp"` on the `<standby>` element. This namespace does not exist. The `standby` container is defined in `Cisco-IOS-XE-interfaces`, which is a **submodule** of `Cisco-IOS-XE-native`. Submodules inherit their parent module's namespace — `http://cisco.com/ns/yang/Cisco-IOS-XE-native`.
+
+Confirmed from YANG Suite node properties:
+```
+module:    Cisco-IOS-XE-native
+namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-native
+xpath:     /native/interface/GigabitEthernet/standby
+```
+
+This is identical on both 16.8 and 17.3 — no version branching needed. Fix: removed the `xmlns` attribute from `<standby>` entirely.
+
+#### 3.7.5 YANG Suite Usage for Verification
+
+YANG Suite was used to visually confirm the `standby` container namespace. The workflow:
+
+1. **Setup → YANG files and repositories → Git tab** — import `vendor/cisco/xe/1681` from `https://github.com/YangModels/yang`
+2. **Setup → YANG module sets** — create set with `Cisco-IOS-XE-native`, run **Locate and add missing dependencies**
+3. **Explore → YANG module explorer** — select the module set, load `Cisco-IOS-XE-native`
+4. Navigate to `interface/GigabitEthernet/standby` — Node Properties panel shows module and namespace
+
+Note: YANG Suite containers do not persist across WSL2 restarts. Restart with:
+```bash
+cd ~/YANG-suite/yangsuite/docker
+podman-compose up -d --no-build
+```
 
 
 ---

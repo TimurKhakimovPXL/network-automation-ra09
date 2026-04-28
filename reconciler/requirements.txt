@@ -1,0 +1,19 @@
+# Reconciler dependencies — pinned to known-stable versions.
+#
+# The engine's own dependencies live in labs/network-automation/requirements.txt.
+# This file covers the reconciler-specific additions on top.
+
+# YAML parsing — already required by the engine, listed here for completeness
+PyYAML==6.0.2
+
+# Jinja2 templating for profiles — new dependency for the GitOps layer
+Jinja2==3.1.4
+
+# Credentials loading — already required by the engine
+python-dotenv==1.0.1
+
+# NETCONF client — required when the reconciler invokes handlers
+ncclient==0.6.15
+
+# RESTCONF client — required when the reconciler invokes handlers
+requests==2.32.3

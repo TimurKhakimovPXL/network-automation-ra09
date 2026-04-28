@@ -1,0 +1,45 @@
+# ospf-baseline.yaml — Every device runs OSPF area 0 on its WAN uplink.
+#
+# This profile demonstrates Jinja2 templating. The reconciler renders this file
+# against EACH device's inventory entry to produce a per-device change list. Any
+# Jinja2 expression in double-curly-braces is substituted using the device's
+# inventory fields as the rendering context.
+#
+# Available rendering variables (one per device):
+#   {{ name }}        — e.g. "LAB-RA09-C01-R01"
+#   {{ rack }}        — integer 1-10
+#   {{ side }}        — "c01" or "c02"
+#   {{ mgmt_ip }}     — e.g. "172.17.9.2"
+#   {{ wan_octet }}   — integer 1-20, used for WAN-side IP allocation
+#   {{ mac }}         — MAC of GigabitEthernet0
+#   {{ platform }}    — e.g. "ISR4200"
+#   {{ ios_version }} — e.g. "16.8"
+#
+# Jinja2 conditionals work too — {% if side == 'c01' %}…{% endif %} can be used
+# to apply different changes to C01 vs C02 routers. See routing-and-vlans.yaml
+# for an example.
+
+description: "OSPF baseline — single area 0, WAN uplink advertised"
+
+per_device_changes:
+
+  # ── WAN-side IP address ────────────────────────────────────────────────────
+  - type: interface_ip
+    interface_type: GigabitEthernet
+    interface_name: "0/0/0"
+    address: "10.199.65.{{ wan_octet }}"
+    netmask: "255.255.255.224"            # /27, per existing addressing scheme
+
+  # ── WAN interface up ───────────────────────────────────────────────────────
+  - type: interface_state
+    interface_type: GigabitEthernet
+    interface_name: "0/0/0"
+    state: enabled
+
+  # ── OSPF process advertising the WAN network ──────────────────────────────
+  - type: ospf
+    process_id: 1
+    networks:
+      - network: "10.199.65.0"
+        wildcard: "0.0.0.31"
+        area: 0

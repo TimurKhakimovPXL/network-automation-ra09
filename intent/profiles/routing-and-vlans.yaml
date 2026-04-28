@@ -1,0 +1,88 @@
+# routing-and-vlans.yaml — Full Layer 3 baseline with VLAN trunking.
+#
+# Demonstrates per-side conditionals using Jinja2. C01 and C02 routers in the
+# same rack get DIFFERENT configuration even though they share the profile —
+# typical for redundant routing pairs where one is "primary" and the other
+# "standby."
+#
+# This profile is illustrative; the actual exercises Wim runs may differ. Use
+# this as a template for building real lab profiles.
+
+description: "Routing + VLANs — C01 primary, C02 standby, shared VLAN trunk"
+
+per_device_changes:
+
+  # ── WAN IP, applied to both sides ─────────────────────────────────────────
+  - type: interface_ip
+    interface_type: GigabitEthernet
+    interface_name: "0/0/0"
+    address: "10.199.65.{{ wan_octet }}"
+    netmask: "255.255.255.224"
+
+  - type: interface_state
+    interface_type: GigabitEthernet
+    interface_name: "0/0/0"
+    state: enabled
+
+  # ── OSPF on both sides, but C01 is the DR ─────────────────────────────────
+  - type: ospf
+    process_id: 1
+    networks:
+      - network: "10.199.65.0"
+        wildcard: "0.0.0.31"
+        area: 0
+
+  # ── Inter-router link (gi0/0/1), addressed differently per side ───────────
+  - type: interface_ip
+    interface_type: GigabitEthernet
+    interface_name: "0/0/1"
+    {% if side == 'c01' %}
+    address: "192.168.{{ rack }}.1"
+    {% else %}
+    address: "192.168.{{ rack }}.2"
+    {% endif %}
+    netmask: "255.255.255.252"
+
+  - type: interface_state
+    interface_type: GigabitEthernet
+    interface_name: "0/0/1"
+    state: enabled
+
+  # ── VLANs: only C01 hosts the SVIs; C02 trunks them through ───────────────
+  {% if side == 'c01' %}
+  - type: vlan
+    id: 10
+    name: "STUDENTS"
+  - type: vlan
+    id: 20
+    name: "STAFF"
+  - type: vlan
+    id: 30
+    name: "MGMT"
+  {% endif %}
+
+  # ── Switchport on the LAN-facing port: trunk on C01, access on C02 ────────
+  - type: interface_switchport
+    interface_type: GigabitEthernet
+    interface_name: "0/0/2"
+    {% if side == 'c01' %}
+    mode: trunk
+    allowed_vlans: [10, 20, 30]
+    {% else %}
+    mode: access
+    access_vlan: 30
+    {% endif %}
+
+  # ── HSRP gateway on C01, standby on C02 ───────────────────────────────────
+  - type: hsrp
+    interface_type: Vlan
+    interface_name: "30"
+    group: 1
+    virtual_ip: "192.168.{{ rack }}.254"
+    {% if side == 'c01' %}
+    priority: 110
+    preempt: true
+    {% else %}
+    priority: 100
+    preempt: false
+    {% endif %}

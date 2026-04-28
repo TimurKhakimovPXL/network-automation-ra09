@@ -1,0 +1,18 @@
+# blank.yaml — The "do nothing" profile.
+#
+# When session.pre_class.mode is "blank", the reconciler does not apply any
+# configuration beyond what ZTP itself bootstrapped (hostname, mgmt IP, SSH,
+# NETCONF, RESTCONF). Students start labs from this minimal baseline.
+#
+# This file exists so that the reconciler can treat ALL pre_class declarations
+# uniformly — it always loads a profile, even when the profile is empty. The
+# special-case handling for "blank" is just "load this file, find no changes,
+# converge nothing."
+#
+# Do not delete this file. Do not add changes to it. If you want students to
+# start with anything beyond the ZTP minimum, create a new profile instead of
+# modifying blank.yaml.
+
+description: "Empty profile — devices remain at ZTP-bootstrap minimum"
+
+per_device_changes: []

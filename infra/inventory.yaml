@@ -1,0 +1,220 @@
+# inventory.yaml — Single source of truth for what hardware exists in the lab.
+#
+# This file declares every Cisco device under management. The reconciler reads
+# it to know what to converge; scripts/apply_dhcp_reservations.py reads it to
+# render DHCP reservations; profiles use it as the substrate for templating.
+#
+# When a new device is racked, add an entry here. Everything downstream updates
+# automatically on the next reconciliation cycle.
+#
+# Field reference:
+#   name        — Hostname for reporting and identification
+#   rack        — Rack number, 1-10
+#   side        — c01 or c02 (left or right router in the rack)
+#   mgmt_ip     — OOB management IP (on GigabitEthernet0)
+#   wan_octet   — Host octet on the WAN side, used for IP templating in profiles
+#   mac         — MAC address of GigabitEthernet0, used for DHCP reservation
+#   platform    — Hardware model, currently ISR4200 throughout
+#   ios_version — IOS XE version; affects which YANG paths some handlers use
+#
+# OOB addressing scheme (subject to confirmation — see docs/oob_network_design.md §4):
+#   Currently using the inherited 172.17.X.0/28 per-rack scheme. May migrate to a
+#   single flat /24 once Wim Leppens confirms the OOB subnet allocation. When that
+#   happens, only the mgmt_ip values in this file change; nothing else.
+#
+# WAN addressing:
+#   C01 routers use odd octets:  rack 1 = 10.199.65.1, rack 2 = 10.199.65.3, ...
+#   C02 routers use even octets: rack 1 = 10.199.65.2, rack 2 = 10.199.65.4, ...
+
+devices:
+
+  # ── Rack 1 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA01-C01-R01
+    rack: 1
+    side: c01
+    mgmt_ip: 172.17.1.2
+    wan_octet: 1
+    mac: "TODO"                  # collect via console: show interface gi0 | include Hardware
+    platform: ISR4200
+    ios_version: "TODO"          # collect via console: show version | include IOS XE Software
+
+  - name: LAB-RA01-C02-R01
+    rack: 1
+    side: c02
+    mgmt_ip: 172.17.1.66
+    wan_octet: 2
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 2 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA02-C01-R01
+    rack: 2
+    side: c01
+    mgmt_ip: 172.17.2.2
+    wan_octet: 3
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA02-C02-R01
+    rack: 2
+    side: c02
+    mgmt_ip: 172.17.2.66
+    wan_octet: 4
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 3 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA03-C01-R01
+    rack: 3
+    side: c01
+    mgmt_ip: 172.17.3.2
+    wan_octet: 5
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA03-C02-R01
+    rack: 3
+    side: c02
+    mgmt_ip: 172.17.3.66
+    wan_octet: 6
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 4 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA04-C01-R01
+    rack: 4
+    side: c01
+    mgmt_ip: 172.17.4.2
+    wan_octet: 7
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA04-C02-R01
+    rack: 4
+    side: c02
+    mgmt_ip: 172.17.4.66
+    wan_octet: 8
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 5 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA05-C01-R01
+    rack: 5
+    side: c01
+    mgmt_ip: 172.17.5.2
+    wan_octet: 9
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA05-C02-R01
+    rack: 5
+    side: c02
+    mgmt_ip: 172.17.5.66
+    wan_octet: 10
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 6 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA06-C01-R01
+    rack: 6
+    side: c01
+    mgmt_ip: 172.17.6.2
+    wan_octet: 11
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA06-C02-R01
+    rack: 6
+    side: c02
+    mgmt_ip: 172.17.6.66
+    wan_octet: 12
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 7 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA07-C01-R01
+    rack: 7
+    side: c01
+    mgmt_ip: 172.17.7.2
+    wan_octet: 13
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA07-C02-R01
+    rack: 7
+    side: c02
+    mgmt_ip: 172.17.7.66
+    wan_octet: 14
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 8 ─────────────────────────────────────────────────────────────────
+  - name: LAB-RA08-C01-R01
+    rack: 8
+    side: c01
+    mgmt_ip: 172.17.8.2
+    wan_octet: 15
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA08-C02-R01
+    rack: 8
+    side: c02
+    mgmt_ip: 172.17.8.66
+    wan_octet: 16
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 9 ─────────────────────────────────────────────────────────────────
+  # Initial test rack — already validated against the engine.
+  - name: LAB-RA09-C01-R01
+    rack: 9
+    side: c01
+    mgmt_ip: 172.17.9.2
+    wan_octet: 17
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA09-C02-R01
+    rack: 9
+    side: c02
+    mgmt_ip: 172.17.9.66
+    wan_octet: 18
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  # ── Rack 10 ────────────────────────────────────────────────────────────────
+  - name: LAB-RA10-C01-R01
+    rack: 10
+    side: c01
+    mgmt_ip: 172.17.10.2
+    wan_octet: 19
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"
+
+  - name: LAB-RA10-C02-R01
+    rack: 10
+    side: c02
+    mgmt_ip: 172.17.10.66
+    wan_octet: 20
+    mac: "TODO"
+    platform: ISR4200
+    ios_version: "TODO"

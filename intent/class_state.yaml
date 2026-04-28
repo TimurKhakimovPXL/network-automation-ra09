@@ -1,0 +1,12 @@
+
+session:
+  name: test
+  pre_class:
+    mode: preconfigured
+    profile: ospf-baseline
+overrides:
+  RA09:
+    mode: blank
+    profile: null
+maintenance:
+  wipe_now: false

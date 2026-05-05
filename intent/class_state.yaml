@@ -1,12 +1,11 @@
-
 session:
   name: test
   pre_class:
-    mode: preconfigured
-    profile: ospf-baseline
-overrides:
-  RA09:
     mode: blank
     profile: null
+overrides:
+  RA09:
+    mode: preconfigured
+    profile: csr1000v-test
 maintenance:
   wipe_now: false

@@ -1,0 +1,14 @@
+# csr1000v-test.yaml — Minimal profile for CSR1000v test device (lab-dc-h-vm10)
+#
+# Only sets a description on GigabitEthernet1 — the single interface confirmed
+# reachable and working on this platform. Used to validate the reconciler loop
+# end-to-end before expanding to full rack profiles.
+
+description: "CSR1000v test — interface description only"
+
+per_device_changes:
+
+  - type: interface_description
+    interface_type: GigabitEthernet
+    interface_name: "1"
+    description: "TEST - managed by network-automation-ra09"

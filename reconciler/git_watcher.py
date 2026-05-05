@@ -39,7 +39,7 @@ def pull() -> bool:
     """
     try:
         result = subprocess.run(
-            ["git", "-C", str(REPO_ROOT), "pull", "--ff-only", "origin", "main"],
+            ["git", "-C", str(REPO_ROOT), "pull", "--ff-only"],
             capture_output=True,
             text=True,
             timeout=30,

@@ -166,7 +166,7 @@ def main():
         sys.exit(1)
 
     # ── Devices ───────────────────────────────────────────────────────────────
-    repo_root = Path(__file__).resolve().parent
+    repo_root = Path(__file__).resolve().parent.parent
     all_devices = load_inventory(repo_root)
 
     devices = all_devices

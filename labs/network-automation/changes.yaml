@@ -12,7 +12,7 @@
 
 devices:
   - name: lab-dc-h-vm10
-    host: 10.125.100.237
+    host: 10.199.64.91
     changes:
       - id: test-desc
         type: interface_description

@@ -11,94 +11,14 @@
 # Run: python3 automate.py
 
 devices:
-
-  # ── RA09 — C01-R01 (left router, HSRP active) ─────────────────────────────
-  #
-  # `id` and `depends_on` are optional. When present, the dispatcher skips
-  # any change whose prerequisite did not finish in (success, already_correct)
-  # — preventing cascade failures. Order in this file is also significant:
-  # changes execute top-to-bottom, so the layer-1/2/3 stack is authored
-  # bottom-up (interface state → IP → routing → services).
-  - name: LAB-RA09-C01-R01
+  - name: lab-dc-h-vm10
     host: 10.125.100.237
     changes:
-
-      - id: c01-desc-mgmt
+      - id: test-desc
         type: interface_description
         interface_type: GigabitEthernet
         interface_name: "1"
-        description: RA09-L management — 172.17.9.2/28
-
-      - id: c01-desc-wan
-        type: interface_description
-        interface_type: GigabitEthernet
-        interface_name: "0/0/1"
-        description: RA09-L WAN uplink — LAB-BR-A-SW08 Fa0/17
-
-      - id: c01-ip-wan
-        type: interface_ip
-        interface_type: GigabitEthernet
-        interface_name: "0/0/1"
-        ip: 10.199.65.17
-        mask: 255.255.255.224
-
-      - id: c01-state-wan
-        type: interface_state
-        interface_type: GigabitEthernet
-        interface_name: "0/0/1"
-        state: up
-        depends_on: [c01-ip-wan]
-
-      - id: c01-default-route
-        type: static_route
-        depends_on: [c01-state-wan]
-        routes:
-          - prefix: 0.0.0.0
-            mask: 0.0.0.0
-            next_hop: 10.199.65.1
-            description: Default route via backbone
-
-      - id: c01-ospf
-        type: ospf
-        depends_on: [c01-ip-wan, c01-state-wan]
-        process_id: 1
-        router_id: 172.17.9.2
-        networks:
-          - prefix: 172.17.9.0
-            wildcard: 0.0.0.15
-            area: 0
-          - prefix: 172.17.9.16
-            wildcard: 0.0.0.15
-            area: 0
-          - prefix: 10.199.65.0
-            wildcard: 0.0.0.31
-            area: 0
-
-      - id: c01-hsrp
-        type: hsrp
-        depends_on: [c01-desc-mgmt]
-        interface_type: GigabitEthernet
-        interface_name: "1"
-        group: 1
-        version: 2
-        priority: 110
-        preempt: true
-        virtual_ip: 172.17.9.1
-
-      - id: c01-dhcp
-        type: dhcp_server
-        depends_on: [c01-hsrp]
-        excluded:
-          - start: 172.17.9.1
-            end: 172.17.9.20
-        pools:
-          - name: RA09-L-Data
-            network: 172.17.9.16
-            mask: 255.255.255.240
-            default_router: 172.17.9.17
-            dns_servers:
-              - 10.199.64.66
-            lease_days: 1
+        description: "TEST - automation working"
 
   # ── RA09 — C02-R01 (right router, HSRP standby) ───────────────────────────
   # Same dependency pattern as C01-R01. Uncomment when ready to push.

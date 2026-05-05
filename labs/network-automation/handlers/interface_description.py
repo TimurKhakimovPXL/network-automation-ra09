@@ -20,6 +20,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -61,14 +62,15 @@ def _extract_description(response: requests.Response, interface_type: str) -> st
 # ── NETCONF ────────────────────────────────────────────────────────────────────
 
 def _netconf_edit(device_params: dict, interface_type: str, interface_name: str, description: str) -> None:
+    interface_tag = xml.interface_tag(interface_type)
     payload = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
-          <{interface_type}>
-            <name>{interface_name}</name>
-            <description>{description}</description>
-          </{interface_type}>
+          <{interface_tag}>
+            <name>{xml.text(interface_name)}</name>
+            <description>{xml.text(description)}</description>
+          </{interface_tag}>
         </interface>
       </native>
     </config>

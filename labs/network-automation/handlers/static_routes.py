@@ -24,6 +24,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -91,13 +92,13 @@ def _desired_routes(change: dict) -> set[tuple]:
 def _build_route_xml(routes: list[dict]) -> str:
     lines = []
     for r in routes:
-        desc_xml = f"<name>{r['description']}</name>" if r.get("description") else ""
+        desc_xml = f"<name>{xml.text(r['description'])}</name>" if r.get("description") else ""
         lines.append(f"""
           <ip-route-interface-forwarding-list>
-            <prefix>{r['prefix']}</prefix>
-            <mask>{r['mask']}</mask>
+            <prefix>{xml.text(r['prefix'])}</prefix>
+            <mask>{xml.text(r['mask'])}</mask>
             <fwd-list>
-              <fwd>{r['next_hop']}</fwd>
+              <fwd>{xml.text(r['next_hop'])}</fwd>
               {desc_xml}
             </fwd-list>
           </ip-route-interface-forwarding-list>""")

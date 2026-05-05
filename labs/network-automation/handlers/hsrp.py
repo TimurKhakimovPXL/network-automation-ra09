@@ -25,6 +25,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -86,6 +87,7 @@ def _states_match(current: dict, desired: dict) -> bool:
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
                   change: dict) -> None:
+    iface_tag = xml.interface_tag(iface_type)
 
     group      = change["group"]
     version    = change.get("version", 2)
@@ -94,26 +96,26 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
     preempt    = change.get("preempt", True)
 
     preempt_xml  = "<preempt/>" if preempt else ""
-    priority_xml = f"<priority>{priority}</priority>"
+    priority_xml = f"<priority>{xml.text(priority)}</priority>"
 
     payload = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
-          <{iface_type}>
-            <name>{iface_name}</name>
+          <{iface_tag}>
+            <name>{xml.text(iface_name)}</name>
             <standby>
-              <version>{version}</version>
+              <version>{xml.text(version)}</version>
               <standby-list>
-                <group-number>{group}</group-number>
+                <group-number>{xml.text(group)}</group-number>
                 <ip>
-                  <address>{virtual_ip}</address>
+                  <address>{xml.text(virtual_ip)}</address>
                 </ip>
                 {priority_xml}
                 {preempt_xml}
               </standby-list>
             </standby>
-          </{iface_type}>
+          </{iface_tag}>
         </interface>
       </native>
     </config>

@@ -36,6 +36,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -87,9 +88,10 @@ def _extract_helpers(response: requests.Response, iface_type: str) -> set[str]:
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
                   helper_addresses: list[str]) -> None:
+    iface_tag = xml.interface_tag(iface_type)
 
     helpers_xml = "".join(
-        f"<helper-address><address>{addr}</address></helper-address>"
+        f"<helper-address><address>{xml.text(addr)}</address></helper-address>"
         for addr in helper_addresses
     )
 
@@ -97,12 +99,12 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
-          <{iface_type}>
-            <name>{iface_name}</name>
+          <{iface_tag}>
+            <name>{xml.text(iface_name)}</name>
             <ip>
               {helpers_xml}
             </ip>
-          </{iface_type}>
+          </{iface_tag}>
         </interface>
       </native>
     </config>

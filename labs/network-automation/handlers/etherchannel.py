@@ -26,6 +26,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -66,31 +67,31 @@ def _extract_port_channel(response: requests.Response) -> dict | None:
 # ── NETCONF ────────────────────────────────────────────────────────────────────
 
 def _build_member_xml(member: dict, channel_id: int, mode: str, protocol: str) -> str:
-    iface_type = member["interface_type"]
+    iface_type = xml.interface_tag(member["interface_type"])
     iface_name = member["interface_name"]
 
     if protocol == "lacp":
         channel_xml = f"""
           <channel-group xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ethernet">
-            <number>{channel_id}</number>
-            <mode>{mode}</mode>
+            <number>{xml.text(channel_id)}</number>
+            <mode>{xml.text(mode)}</mode>
           </channel-group>"""
     elif protocol == "pagp":
         channel_xml = f"""
           <channel-group xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ethernet">
-            <number>{channel_id}</number>
-            <mode>{mode}</mode>
+            <number>{xml.text(channel_id)}</number>
+            <mode>{xml.text(mode)}</mode>
           </channel-group>"""
     else:
         channel_xml = f"""
           <channel-group xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ethernet">
-            <number>{channel_id}</number>
+            <number>{xml.text(channel_id)}</number>
             <mode>on</mode>
           </channel-group>"""
 
     return f"""
         <{iface_type}>
-          <name>{iface_name}</name>
+          <name>{xml.text(iface_name)}</name>
           {channel_xml}
         </{iface_type}>"""
 
@@ -102,7 +103,7 @@ def _netconf_edit(device_params: dict, change: dict) -> None:
     description = change.get("description", "")
     members     = change.get("members", [])
 
-    desc_xml    = f"<description>{description}</description>" if description else ""
+    desc_xml    = f"<description>{xml.text(description)}</description>" if description else ""
 
     member_xml = "".join(
         _build_member_xml(m, channel_id, mode, protocol)
@@ -114,7 +115,7 @@ def _netconf_edit(device_params: dict, change: dict) -> None:
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
           <Port-channel>
-            <name>{channel_id}</name>
+            <name>{xml.text(channel_id)}</name>
             {desc_xml}
           </Port-channel>
           {member_xml}

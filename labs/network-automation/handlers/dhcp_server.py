@@ -51,6 +51,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -170,8 +171,8 @@ def _build_excluded_xml(excluded: list[dict]) -> str:
     for ex in excluded:
         lines.append(f"""
           <excluded-address>
-            <low-address>{ex['start']}</low-address>
-            <high-address>{ex['end']}</high-address>
+            <low-address>{xml.text(ex['start'])}</low-address>
+            <high-address>{xml.text(ex['end'])}</high-address>
           </excluded-address>""")
     return "".join(lines)
 
@@ -181,32 +182,32 @@ def _build_pool_xml(pool: dict, pre_17: bool) -> str:
 
     if pre_17:
         # 16.x: leaf-list elements, lease list with capital Days
-        gw_xml  = f"<default-router>{pool['default_router']}</default-router>" if pool.get("default_router") else ""
+        gw_xml  = f"<default-router>{xml.text(pool['default_router'])}</default-router>" if pool.get("default_router") else ""
         dns_xml = "".join(
-            f"<dns-server>{dns}</dns-server>"
+            f"<dns-server>{xml.text(dns)}</dns-server>"
             for dns in pool.get("dns_servers", [])
         )
-        lease_xml = f"<lease><Days>{lease}</Days></lease>"
+        lease_xml = f"<lease><Days>{xml.text(lease)}</Days></lease>"
     else:
         # 17.x: container elements with inner leaf-lists, lease container/choice
         gw_xml = ""
         if pool.get("default_router"):
             gw_xml = f"""<default-router>
-              <default-router-list>{pool['default_router']}</default-router-list>
+              <default-router-list>{xml.text(pool['default_router'])}</default-router-list>
             </default-router>"""
         dns_inner = "".join(
-            f"<dns-server-list>{dns}</dns-server-list>"
+            f"<dns-server-list>{xml.text(dns)}</dns-server-list>"
             for dns in pool.get("dns_servers", [])
         )
         dns_xml   = f"<dns-server>{dns_inner}</dns-server>" if dns_inner else ""
-        lease_xml = f"<lease><lease-value><days>{lease}</days></lease-value></lease>"
+        lease_xml = f"<lease><lease-value><days>{xml.text(lease)}</days></lease-value></lease>"
 
     return f"""
       <pool>
-        <id>{pool['name']}</id>
+        <id>{xml.text(pool['name'])}</id>
         <network>
-          <number>{pool['network']}</number>
-          <mask>{pool['mask']}</mask>
+          <number>{xml.text(pool['network'])}</number>
+          <mask>{xml.text(pool['mask'])}</mask>
         </network>
         {gw_xml}
         {dns_xml}

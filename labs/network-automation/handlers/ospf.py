@@ -28,6 +28,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -140,9 +141,9 @@ def _build_network_xml(networks: list[dict], pre_17: bool) -> str:
     for n in networks:
         lines.append(f"""
           <network>
-            <ip>{n['prefix']}</ip>
-            <{wildcard_elem}>{n['wildcard']}</{wildcard_elem}>
-            <area>{n['area']}</area>
+            <ip>{xml.text(n['prefix'])}</ip>
+            <{wildcard_elem}>{xml.text(n['wildcard'])}</{wildcard_elem}>
+            <area>{xml.text(n['area'])}</area>
           </network>""")
     return "".join(lines)
 
@@ -153,14 +154,14 @@ def _netconf_edit(device_params: dict, change: dict, pre_17: bool) -> None:
     networks      = change.get("networks", [])
 
     network_xml   = _build_network_xml(networks, pre_17)
-    router_id_xml = f"<router-id>{router_id}</router-id>" if router_id else ""
+    router_id_xml = f"<router-id>{xml.text(router_id)}</router-id>" if router_id else ""
 
     payload = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <router>
           <ospf xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ospf">
-            <id>{process_id}</id>
+            <id>{xml.text(process_id)}</id>
             {router_id_xml}
             {network_xml}
           </ospf>

@@ -22,6 +22,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -66,21 +67,22 @@ def _extract_ip(response: requests.Response, iface_type: str) -> tuple[str | Non
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
                   ip: str, mask: str, secondary: bool) -> None:
+    iface_tag = xml.interface_tag(iface_type)
 
     if secondary:
         addr_xml = f"""
           <address>
             <secondary>
-              <address>{ip}</address>
-              <mask>{mask}</mask>
+              <address>{xml.text(ip)}</address>
+              <mask>{xml.text(mask)}</mask>
             </secondary>
           </address>"""
     else:
         addr_xml = f"""
           <address>
             <primary>
-              <address>{ip}</address>
-              <mask>{mask}</mask>
+              <address>{xml.text(ip)}</address>
+              <mask>{xml.text(mask)}</mask>
             </primary>
           </address>"""
 
@@ -88,12 +90,12 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
-          <{iface_type}>
-            <name>{iface_name}</name>
+          <{iface_tag}>
+            <name>{xml.text(iface_name)}</name>
             <ip>
               {addr_xml}
             </ip>
-          </{iface_type}>
+          </{iface_tag}>
         </interface>
       </native>
     </config>

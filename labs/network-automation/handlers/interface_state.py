@@ -24,6 +24,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -66,6 +67,7 @@ def _extract_state(response: requests.Response, iface_type: str) -> str:
 # ── NETCONF ────────────────────────────────────────────────────────────────────
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str, state: str) -> None:
+    iface_tag = xml.interface_tag(iface_type)
     if state == "down":
         # Add shutdown element
         shutdown_xml = "<shutdown/>"
@@ -79,10 +81,10 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str, state: 
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
-          <{iface_type}>
-            <name>{iface_name}</name>
+          <{iface_tag}>
+            <name>{xml.text(iface_name)}</name>
             {shutdown_xml}
-          </{iface_type}>
+          </{iface_tag}>
         </interface>
       </native>
     </config>

@@ -17,3 +17,6 @@ ncclient==0.6.15
 
 # RESTCONF client — required when the reconciler invokes handlers
 requests==2.32.3
+
+# SSH client for wipe operations (write erase + reload in 1)
+paramiko==3.4.0

@@ -31,6 +31,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -123,7 +124,7 @@ def _build_switchport_xml(change: dict) -> str:
             </mode>
             <access>
               <vlan>
-                <vlan>{vlan}</vlan>
+                <vlan>{xml.text(vlan)}</vlan>
               </vlan>
             </access>
           </switchport>"""
@@ -132,8 +133,8 @@ def _build_switchport_xml(change: dict) -> str:
         native_vlan   = change.get("native_vlan", "")
         allowed_vlans = change.get("allowed_vlans", "")
 
-        native_xml  = f"<native><vlan><vlan-id>{native_vlan}</vlan-id></vlan></native>" if native_vlan else ""
-        allowed_xml = f"<allowed><vlan><vlans>{allowed_vlans}</vlans></vlan></allowed>" if allowed_vlans else ""
+        native_xml  = f"<native><vlan><vlan-id>{xml.text(native_vlan)}</vlan-id></vlan></native>" if native_vlan else ""
+        allowed_xml = f"<allowed><vlan><vlans>{xml.text(allowed_vlans)}</vlans></vlan></allowed>" if allowed_vlans else ""
 
         return f"""
           <switchport>
@@ -151,16 +152,17 @@ def _build_switchport_xml(change: dict) -> str:
 
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str, change: dict) -> None:
+    iface_tag = xml.interface_tag(iface_type)
     switchport_xml = _build_switchport_xml(change)
 
     payload = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <interface>
-          <{iface_type}>
-            <name>{iface_name}</name>
+          <{iface_tag}>
+            <name>{xml.text(iface_name)}</name>
             {switchport_xml}
-          </{iface_type}>
+          </{iface_tag}>
         </interface>
       </native>
     </config>

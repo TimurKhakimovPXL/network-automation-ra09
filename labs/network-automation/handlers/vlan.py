@@ -23,6 +23,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -78,10 +79,10 @@ def _desired_vlans(change: dict) -> dict[int, str]:
 def _build_vlan_xml(vlans: dict[int, str]) -> str:
     lines = []
     for vlan_id, name in vlans.items():
-        name_xml = f"<name>{name}</name>" if name else ""
+        name_xml = f"<name>{xml.text(name)}</name>" if name else ""
         lines.append(f"""
           <vlan-list>
-            <id>{vlan_id}</id>
+            <id>{xml.text(vlan_id)}</id>
             {name_xml}
           </vlan-list>""")
     return "".join(lines)

@@ -16,19 +16,19 @@ per_device_changes:
   - type: interface_ip
     interface_type: GigabitEthernet
     interface_name: "0/0/0"
-    address: "10.199.65.{{ wan_octet }}"
-    netmask: "255.255.255.224"
+    ip: "10.199.65.{{ wan_octet }}"
+    mask: "255.255.255.224"
 
   - type: interface_state
     interface_type: GigabitEthernet
     interface_name: "0/0/0"
-    state: enabled
+    state: up
 
-  # ── OSPF on both sides, but C01 is the DR ─────────────────────────────────
+  # ── OSPF on both sides ────────────────────────────────────────────────────
   - type: ospf
     process_id: 1
     networks:
-      - network: "10.199.65.0"
+      - prefix: "10.199.65.0"
         wildcard: "0.0.0.31"
         area: 0
 
@@ -37,28 +37,27 @@ per_device_changes:
     interface_type: GigabitEthernet
     interface_name: "0/0/1"
     {% if side == 'c01' %}
-    address: "192.168.{{ rack }}.1"
+    ip: "192.168.{{ rack }}.1"
     {% else %}
-    address: "192.168.{{ rack }}.2"
+    ip: "192.168.{{ rack }}.2"
     {% endif %}
-    netmask: "255.255.255.252"
+    mask: "255.255.255.252"
 
   - type: interface_state
     interface_type: GigabitEthernet
     interface_name: "0/0/1"
-    state: enabled
+    state: up
 
   # ── VLANs: only C01 hosts the SVIs; C02 trunks them through ───────────────
   {% if side == 'c01' %}
   - type: vlan
-    id: 10
-    name: "STUDENTS"
-  - type: vlan
-    id: 20
-    name: "STAFF"
-  - type: vlan
-    id: 30
-    name: "MGMT"
+    vlans:
+      - id: 10
+        name: "STUDENTS"
+      - id: 20
+        name: "STAFF"
+      - id: 30
+        name: "MGMT"
   {% endif %}
 
   # ── Switchport on the LAN-facing port: trunk on C01, access on C02 ────────
@@ -67,7 +66,7 @@ per_device_changes:
     interface_name: "0/0/2"
     {% if side == 'c01' %}
     mode: trunk
-    allowed_vlans: [10, 20, 30]
+    allowed_vlans: "10,20,30"
     {% else %}
     mode: access
     access_vlan: 30

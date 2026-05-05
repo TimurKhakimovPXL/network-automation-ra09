@@ -20,7 +20,7 @@ devices:
   # changes execute top-to-bottom, so the layer-1/2/3 stack is authored
   # bottom-up (interface state → IP → routing → services).
   - name: LAB-RA09-C01-R01
-    host: 10.199.64.91
+    host: 10.125.100.237
     changes:
 
       - id: c01-desc-mgmt

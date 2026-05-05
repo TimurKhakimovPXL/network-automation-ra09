@@ -185,7 +185,7 @@ devices:
   - name: lab-dc-h-vm10
     rack: 9
     side: c01
-    mgmt_ip: 10.199.64.91
+    mgmt_ip: 10.125.100.237
     wan_octet: 17
     mac: "TODO"
     platform: CSR1000v

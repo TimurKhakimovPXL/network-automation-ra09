@@ -20,13 +20,13 @@ devices:
   # changes execute top-to-bottom, so the layer-1/2/3 stack is authored
   # bottom-up (interface state → IP → routing → services).
   - name: LAB-RA09-C01-R01
-    host: 172.17.9.2
+    host: 10.199.64.91
     changes:
 
       - id: c01-desc-mgmt
         type: interface_description
         interface_type: GigabitEthernet
-        interface_name: "0/0/0"
+        interface_name: "1"
         description: RA09-L management — 172.17.9.2/28
 
       - id: c01-desc-wan
@@ -78,7 +78,7 @@ devices:
         type: hsrp
         depends_on: [c01-desc-mgmt]
         interface_type: GigabitEthernet
-        interface_name: "0/0/0"
+        interface_name: "1"
         group: 1
         version: 2
         priority: 110
@@ -108,7 +108,7 @@ devices:
   #     - id: c02-desc-mgmt
   #       type: interface_description
   #       interface_type: GigabitEthernet
-  #       interface_name: "0/0/0"
+  #       interface_name: "1"
   #       description: RA09-R management — 172.17.9.66/28
   #
   #     - id: c02-desc-wan
@@ -160,7 +160,7 @@ devices:
   #       type: hsrp
   #       depends_on: [c02-desc-mgmt]
   #       interface_type: GigabitEthernet
-  #       interface_name: "0/0/0"
+  #       interface_name: "1"
   #       group: 1
   #       version: 2
   #       priority: 100        # lower than C01 (110) — C02 is HSRP standby

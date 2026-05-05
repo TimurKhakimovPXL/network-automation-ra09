@@ -182,14 +182,14 @@ devices:
 
   # ── Rack 9 ─────────────────────────────────────────────────────────────────
   # Initial test rack — already validated against the engine.
-  - name: LAB-RA09-C01-R01
+  - name: lab-dc-h-vm10
     rack: 9
     side: c01
-    mgmt_ip: 172.17.9.2
+    mgmt_ip: 10.199.64.91
     wan_octet: 17
     mac: "TODO"
-    platform: ISR4200
-    ios_version: "TODO"
+    platform: CSR1000v
+    ios_version: "16.9.5"
 
   - name: LAB-RA09-C02-R01
     rack: 9

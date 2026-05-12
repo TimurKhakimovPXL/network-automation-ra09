@@ -14,7 +14,7 @@ overrides:
       profile: null
     LAB-R11-C01-R01:
       mode: preconfigured
-      profile: isr4221-demo
+      profile: isr4221-physical-test
 
 maintenance:
   wipe_now: false

@@ -235,6 +235,52 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "17.6.3"
 
+  # ── First physical router (LAB-R11-C01-R01) ──────────────────────
+  # Cisco ISR4221/K9 — first real-hardware router managed by the
+  # engine. Chassis S/N FGL2644LGX2, hw-rev V05. Factory-default
+  # hostname "Router" at time of onboarding.
+  #
+  # Hardware: built-in ISR4221-2x1GE (Gi0/0/0, Gi0/0/1) + NIM-2T sync
+  # serial in subslot 0/1 (NIM-2T is unused by automation — leave
+  # alone, it's an out-of-scope module).
+  #
+  # ADDRESSING NOTE (read carefully before writing profiles):
+  # This device lives on the lab-shared subnet 172.19.11.0/24 by
+  # design, NOT on the student-rack 172.17.X.X/28 scheme. The name
+  # "LAB-R11-C01-R01" conveys logical role (rack 11, side C01,
+  # router 1) — it does NOT imply subnet membership. Decoupling name
+  # from IP is intentional: device identity stays stable across
+  # renumbering, replication, and lab reorganization.
+  #
+  # Consequence: wan_octet: 0 is a positive sentinel meaning "this
+  # device is intentionally outside the rack-templated WAN scheme."
+  # Any profile applied here MUST use explicit IPs — never templated
+  # 172.17.{{ rack }}.{{ wan_octet }} arithmetic. If a future profile
+  # assignment uses rack-templated math against this device, the
+  # engine should fail loudly (separate enhancement, not yet built).
+  #
+  # Bootstrap path on 2026-05-12: SSH-pushed netconf-yang + restconf +
+  # AAA (aaa new-model, login default local, exec default local,
+  # ip http authentication local). RESTCONF + NETCONF both verified
+  # end-to-end with ncclient_device_type: iosxe.
+  #
+  # IMPORTANT: AAA is MANDATORY on IOS XE 17.x for RESTCONF auth —
+  # the implicit fallback in 16.x is removed. Without AAA + local
+  # http auth, RESTCONF returns an OpenResty "page unavailable" error
+  # despite all yang-management processes being healthy. This applies
+  # to all future 17.x devices. See
+  # docs/troubleshooting/netconf-connectivity.md.
+  - name: LAB-R11-C01-R01
+    rack: 11
+    side: c01
+    mgmt_ip: 172.19.11.2
+    wan_octet: 0
+    mac: "TODO"
+    serial: "FGL2644LGX2"
+    platform: ISR4221
+    ncclient_device_type: iosxe
+    ios_version: "17.3.4"
+
   # ── Rack 10 ────────────────────────────────────────────────────────────────
   - name: LAB-RA10-C01-R01
     rack: 10

@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────────
+# isr4221-demo — safe Day-N demo profile for the first physical router.
+# ─────────────────────────────────────────────────────────────────────
+#
+# Purpose: prove the engine can declaratively converge a real Cisco
+# ISR4221 against intent, using only handlers that have zero impact on
+# physical ports. Loopback interfaces are virtual, fully reversible,
+# and cannot disrupt any data-plane connectivity.
+#
+# Exercises three handlers (interface_description, interface_ip,
+# interface_state) and the depends_on chain — the loopback must exist
+# (description sets it as a side effect of writing to
+# Cisco-IOS-XE-native) before IP can be assigned or it can be brought
+# up.
+#
+# Target: LAB-R11-C01-R01 (ISR4221/K9, FGL2644LGX2)
+# Address: 192.168.11.1/32 — RFC1918 documentation range, RA11
+#          mnemonic, no overlap with lab management (172.19.11.0/24)
+#          or WAN subnets. Loopback IP, not on the wire.
+#
+# Extension path (post-demo, separate commits):
+#   - Add Gi0/0/0 / Gi0/0/1 (built-in NIM 2x1GE ports) once cabling
+#     and intent are confirmed.
+#   - Do NOT touch NIM subslot 0/1 (NIM-2T sync serial) — out of scope.
+# ─────────────────────────────────────────────────────────────────────
+
+changes:
+  - id: loopback0-description
+    type: interface_description
+    interface: Loopback0
+    description: "Managed by network-automation-ra09 — RA11 demo loopback"
+
+  - id: loopback0-ip
+    type: interface_ip
+    interface: Loopback0
+    ip: 192.168.11.1
+    mask: 255.255.255.255
+    depends_on: loopback0-description
+
+  - id: loopback0-state
+    type: interface_state
+    interface: Loopback0
+    state: up
+    depends_on: loopback0-ip

@@ -3,6 +3,7 @@ session:
   pre_class:
     mode: blank
     profile: null
+
 overrides:
   devices:
     lab-dc-h-vm10:
@@ -11,5 +12,9 @@ overrides:
     lab-dc-h-sw01:
       mode: observe
       profile: null
+    LAB-R11-C01-R01:
+      mode: preconfigured
+      profile: isr4221-demo
+
 maintenance:
   wipe_now: false

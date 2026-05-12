@@ -20,6 +20,20 @@ ALLOWED_INTERFACE_TAGS = {
     "Tunnel",
 }
 
+# Interface types that are config, not hardware. A 404 on the
+# initial RESTCONF read means "not yet created in running-config";
+# the first edit-config write will create the interface. Handlers
+# treat 404-on-virtual as "current state is absent" rather than
+# an error. Anything not in this set is treated as physical: a
+# 404 means the interface doesn't exist as hardware and is a real
+# error (typo, wrong platform, etc.).
+VIRTUAL_INTERFACE_TAGS = {
+    "Loopback",
+    "Tunnel",
+    "Vlan",
+    "Port-channel",
+}
+
 
 def text(value: object) -> str:
     """Escape a value for use inside an XML text node."""

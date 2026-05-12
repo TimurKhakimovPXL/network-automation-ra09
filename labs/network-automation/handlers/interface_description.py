@@ -113,22 +113,27 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         return result
 
     if response.status_code == 404:
-        result["status"] = "interface_not_found"
-        result["error"]  = f"HTTP 404 — interface {iface_type}{iface_name} not found on device"
-        return result
-
-    if not response.ok:
+        if iface_type in xml.VIRTUAL_INTERFACE_TAGS:
+            # Virtual interface not yet created in running-config; the
+            # edit-config write below will create it. Current state is
+            # absent.
+            current_desc = None
+        else:
+            result["status"] = "interface_not_found"
+            result["error"]  = f"HTTP 404 — interface {iface_type}{iface_name} not found on device"
+            return result
+    elif not response.ok:
         result["status"] = "read_failed"
         result["error"]  = f"HTTP {response.status_code}"
         return result
-
-    # 2. Compare
-    try:
-        current_desc = _extract_description(response, iface_type)
-    except Exception as e:
-        result["status"] = "read_failed"
-        result["error"]  = f"Failed to parse RESTCONF response: {e}"
-        return result
+    else:
+        # 2. Compare
+        try:
+            current_desc = _extract_description(response, iface_type)
+        except Exception as e:
+            result["status"] = "read_failed"
+            result["error"]  = f"Failed to parse RESTCONF response: {e}"
+            return result
 
     result["old_description"] = current_desc
 

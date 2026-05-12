@@ -36,6 +36,7 @@ devices:
     wan_octet: 1
     mac: "TODO"                  # collect via console: show interface gi0 | include Hardware
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"          # collect via console: show version | include IOS XE Software
 
   - name: LAB-RA01-C02-R01
@@ -45,6 +46,7 @@ devices:
     wan_octet: 2
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 2 ─────────────────────────────────────────────────────────────────
@@ -55,6 +57,7 @@ devices:
     wan_octet: 3
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA02-C02-R01
@@ -64,6 +67,7 @@ devices:
     wan_octet: 4
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 3 ─────────────────────────────────────────────────────────────────
@@ -74,6 +78,7 @@ devices:
     wan_octet: 5
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA03-C02-R01
@@ -83,6 +88,7 @@ devices:
     wan_octet: 6
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 4 ─────────────────────────────────────────────────────────────────
@@ -93,6 +99,7 @@ devices:
     wan_octet: 7
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA04-C02-R01
@@ -102,6 +109,7 @@ devices:
     wan_octet: 8
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 5 ─────────────────────────────────────────────────────────────────
@@ -112,6 +120,7 @@ devices:
     wan_octet: 9
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA05-C02-R01
@@ -121,6 +130,7 @@ devices:
     wan_octet: 10
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 6 ─────────────────────────────────────────────────────────────────
@@ -131,6 +141,7 @@ devices:
     wan_octet: 11
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA06-C02-R01
@@ -140,6 +151,7 @@ devices:
     wan_octet: 12
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 7 ─────────────────────────────────────────────────────────────────
@@ -150,6 +162,7 @@ devices:
     wan_octet: 13
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA07-C02-R01
@@ -159,6 +172,7 @@ devices:
     wan_octet: 14
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 8 ─────────────────────────────────────────────────────────────────
@@ -169,6 +183,7 @@ devices:
     wan_octet: 15
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA08-C02-R01
@@ -178,6 +193,7 @@ devices:
     wan_octet: 16
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   # ── Rack 9 ─────────────────────────────────────────────────────────────────
@@ -189,6 +205,7 @@ devices:
     wan_octet: 17
     mac: "TODO"
     platform: CSR1000v
+    ncclient_device_type: csr
     ios_version: "16.9.5"
 
   - name: LAB-RA09-C02-R01
@@ -198,7 +215,22 @@ devices:
     wan_octet: 18
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
+
+  # ── Test switch ──────────────────────────────────────────────────────────────
+  # Catalyst C9200L-24T-4G — test device for switch handler validation.
+  # NETCONF (830) not yet reachable — Mgmt-vrf binding issue, pending resolution
+  # with Leppens. RESTCONF (443) confirmed working from Ubuntu server.
+  - name: lab-dc-h-sw01
+    rack: 9
+    side: sw
+    mgmt_ip: 172.19.11.6
+    wan_octet: 0
+    mac: "TODO"
+    platform: C9200L
+    ncclient_device_type: iosxe
+    ios_version: "17.6.3"
 
   # ── Rack 10 ────────────────────────────────────────────────────────────────
   - name: LAB-RA10-C01-R01
@@ -208,6 +240,7 @@ devices:
     wan_octet: 19
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"
 
   - name: LAB-RA10-C02-R01
@@ -217,4 +250,5 @@ devices:
     wan_octet: 20
     mac: "TODO"
     platform: ISR4200
+    ncclient_device_type: iosxe
     ios_version: "TODO"

@@ -367,7 +367,11 @@ def apply_changes_to_device(device: Dict[str, Any], changes: List[Dict[str, Any]
         "username":         os.environ["LAB_USER"],
         "password":         os.environ["LAB_PASS"],
         "hostkey_verify":   False,
-        "device_params":    {"name": "csr"},
+        # ncclient profile name — driven by inventory so each platform negotiates
+        # the correct NETCONF SSH subsystem. 'csr' for CSR1000v, 'iosxe' for
+        # ISR4200 / Catalyst 9000 / other IOS XE. Falls back to 'csr' if the
+        # field is absent for backward compatibility with older inventory entries.
+        "device_params":    {"name": device.get("ncclient_device_type", "csr")},
         "allow_agent":      False,
         "look_for_keys":    False,
     }

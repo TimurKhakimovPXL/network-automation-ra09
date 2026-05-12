@@ -81,6 +81,13 @@ def build_device_params(device: dict, username: str, password: str) -> dict:
     Build the ncclient connection parameter dict for a device.
     Host and port come from changes.yaml.
     Credentials come from .env — never from the YAML file.
+
+    The 'ncclient_device_type' field selects which ncclient profile is used
+    for the NETCONF SSH subsystem negotiation. Values:
+        csr    — CSR1000v (default for backward compatibility)
+        iosxe  — ISR4200, Catalyst 9000 series, any other IOS XE platform
+    The field is set per-device in inventory.yaml (or per-entry in changes.yaml)
+    and falls back to 'csr' if absent so existing inventory entries keep working.
     """
     return {
         "host":                    device["host"],
@@ -88,7 +95,7 @@ def build_device_params(device: dict, username: str, password: str) -> dict:
         "username":                username,
         "password":                password,
         "hostkey_verify":          False,
-        "device_params":           {"name": "csr"},
+        "device_params":           {"name": device.get("ncclient_device_type", "csr")},
         "allow_agent":             False,
         "look_for_keys":           False,
     }

@@ -220,12 +220,15 @@ devices:
 
   # ── Test switch ──────────────────────────────────────────────────────────────
   # Catalyst C9200L-24T-4G — test device for switch handler validation.
-  # NETCONF (830) not yet reachable — Mgmt-vrf binding issue, pending resolution
-  # with Leppens. RESTCONF (443) confirmed working from Ubuntu server.
+  # NETCONF (830) and RESTCONF (443) both confirmed reachable from the Ubuntu
+  # controller. Requires ncclient_device_type: iosxe (not csr) — the CSR
+  # handler does not negotiate cleanly against Catalyst 9000.
+  # See docs/troubleshooting/netconf-connectivity.md for the diagnostic chain
+  # (rejected Mgmt-vrf hypothesis on file).
   - name: lab-dc-h-sw01
     rack: 9
     side: sw
-    mgmt_ip: 172.19.11.6
+    mgmt_ip: 172.19.11.5
     wan_octet: 0
     mac: "TODO"
     platform: C9200L

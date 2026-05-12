@@ -526,7 +526,23 @@ def reconcile_once() -> Dict[str, Any]:
 
         try:
             results = apply_changes_to_device(device, target_changes)
-            device_report["status"]         = "converged"
+            # Status reflects what actually happened. "converged" is only valid
+            # if every change succeeded or was already correct. If any handler
+            # failed, surface that; if changes were only skipped via depends_on,
+            # surface that distinctly so the operator sees the cascade.
+            all_ok = all(
+                r.get("status") in ("success", "already_correct")
+                for r in results
+            )
+            any_failed = any(
+                r.get("status") not in ("success", "already_correct", "skipped_depends_on")
+                for r in results
+            )
+            device_report["status"] = (
+                "converged" if all_ok else
+                "converged_with_failures" if any_failed else
+                "converged_with_skips"
+            )
             device_report["change_results"] = results
         except Exception as e:
             device_report["status"]    = "convergence_exception"

@@ -50,12 +50,68 @@ session:
     profile: ospf-baseline
 
 overrides:
-  RA09:
-    mode: blank
-    profile: null
+  racks:
+    RA09:
+      mode: blank
+      profile: null
 ```
 
 RA09 stays blank; all other racks get the OSPF baseline.
+
+### Per-device overrides
+
+When a rack holds devices of different types (e.g. a router and a switch in
+the same rack), a rack-wide override may apply the wrong profile to one of
+them. Use `overrides.devices` to target a single device by inventory name.
+
+Precedence (most specific wins):
+
+1. `overrides.devices[<device-name>]` — single device
+2. `overrides.racks[<RAxx>]` — whole rack
+3. `session.pre_class` — default for everything not overridden
+
+Worked example: rack 9 contains a CSR1000v test router (`lab-dc-h-vm10`)
+and a Catalyst test switch (`lab-dc-h-sw01`). The router should run the
+`csr1000v-test` profile, but the switch must stay blank because that
+profile targets `GigabitEthernet1` which does not exist on the C9200L.
+
+```yaml
+session:
+  pre_class:
+    mode: blank
+    profile: null
+
+overrides:
+  devices:
+    lab-dc-h-vm10:
+      mode: preconfigured
+      profile: csr1000v-test
+```
+
+The CSR router gets `csr1000v-test`; the switch falls through to
+`session.pre_class` (blank); every other device in the lab also falls
+through to blank.
+
+Mixing rack and device scopes works the same way — device entries override
+rack entries override the session default:
+
+```yaml
+overrides:
+  racks:
+    RA09:
+      mode: preconfigured
+      profile: ospf-baseline
+  devices:
+    lab-dc-h-sw01:        # switch in rack 9 — exempt from the rack-wide profile
+      mode: blank
+      profile: null
+```
+
+> **Legacy syntax.** Earlier versions accepted rack keys directly under
+> `overrides:` (`overrides.RA09: { ... }`) instead of nested under
+> `overrides.racks:`. The flat form is still honoured for backward
+> compatibility but is deprecated — use `overrides.racks` and
+> `overrides.devices` in new configurations.
 
 ### Wipe everything immediately
 

@@ -108,6 +108,8 @@ Profiles are reusable: `ospf-baseline` can be applied to a class on Tuesday, the
 
 `intent/class_state.yaml` declares what state the lab should be in *right now*. It selects a profile, optionally overrides per-rack, and provides a maintenance-mode flag for explicit wipes. This is the only file the supervisor edits day-to-day.
 
+Overrides support two granularities: `overrides.racks[<RAxx>]` applies to every device in a rack, and `overrides.devices[<device-name>]` applies to a single device. Device-level overrides take precedence over rack-level overrides, which take precedence over `session.pre_class`. This matters when a rack contains heterogeneous hardware (e.g. a router and a switch sharing a rack): a per-device override pins each device to a profile it actually supports without forcing the supervisor to split the rack into a separate session. Legacy flat rack keys (`overrides.RA09: { ... }`) remain honoured for backward compatibility.
+
 ---
 
 ## 4. The Reconciliation Loop

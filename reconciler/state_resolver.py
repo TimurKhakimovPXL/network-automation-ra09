@@ -70,9 +70,22 @@ def resolve() -> Dict[str, List[Dict[str, Any]]]:
         if not device_name:
             raise ResolverError(f"inventory entry missing 'name': {device!r}")
 
-        # Determine which profile applies — overrides win, otherwise session default
+        # Determine which profile applies. Precedence (most specific wins):
+        #   1. overrides.devices[<device-name>]    — single device
+        #   2. overrides.racks[<RAxx>]             — whole rack
+        #   3. overrides[<RAxx>]                   — legacy flat rack key (back-compat)
+        #   4. session.pre_class                   — default for everything else
         rack_id = f"RA{device.get('rack', 0):02d}"
-        override = (intent.get("overrides") or {}).get(rack_id)
+        overrides = intent.get("overrides") or {}
+
+        device_override = (overrides.get("devices") or {}).get(device_name)
+        rack_override = (overrides.get("racks") or {}).get(rack_id)
+        legacy_override = overrides.get(rack_id)
+
+        override = next(
+            (o for o in (device_override, rack_override, legacy_override) if o is not None),
+            None,
+        )
 
         if override is not None:
             mode = override.get("mode", "blank")

@@ -499,6 +499,17 @@ def reconcile_once() -> Dict[str, Any]:
 
         device_report: Dict[str, Any] = {"mgmt_ip": device["mgmt_ip"]}
 
+        # Observe mode: probe reachability only. No writes, no wipes, no
+        # config probing. Right mode for devices the engine cannot safely
+        # manage yet (e.g. switches before switch-specific ZTP and handlers).
+        if target_changes is None:
+            device_report["status"] = (
+                "observed_reachable" if is_reachable(device["mgmt_ip"])
+                else "observed_unreachable"
+            )
+            report["devices"][device_name] = device_report
+            continue
+
         if not is_reachable(device["mgmt_ip"]):
             device_report["status"]          = "unreachable"
             device_report["pending_changes"] = len(target_changes)
@@ -557,7 +568,13 @@ def reconcile_once() -> Dict[str, Any]:
         current_sha = report["git"]["head_sha"]
         if wipe_state["last_completed_sha"] != current_sha:
             log.info("wipe_now=true and SHA differs from last completed wipe — performing wipe")
-            wipe_summary = perform_wipe(inventory)
+            # Observe-mode devices are excluded from blanket wipes: the whole
+            # point of observe is that the engine never writes to them.
+            wipe_targets = [
+                d for d in inventory
+                if target_state.get(d["name"]) is not None
+            ]
+            wipe_summary = perform_wipe(wipe_targets)
             report["wipe"] = wipe_summary
             # Bug 2 fix — only persist the SHA if at least one device was
             # actually wiped. If all devices were unreachable the SHA is NOT

@@ -16,7 +16,7 @@ observed state.
 """
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import yaml
 from jinja2 import Environment, StrictUndefined, TemplateError
@@ -42,7 +42,7 @@ class ResolverError(Exception):
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
-def resolve() -> Dict[str, List[Dict[str, Any]]]:
+def resolve() -> Dict[str, Optional[List[Dict[str, Any]]]]:
     """
     Top-level entry point. Reads all three YAML sources and produces a per-device
     target-state dict.
@@ -54,7 +54,10 @@ def resolve() -> Dict[str, List[Dict[str, Any]]]:
           ...
         }
 
-    Devices that should remain blank yield an empty list (still present in dict).
+    Per-device values encode the mode:
+        list of changes — preconfigured (apply these)
+        []              — blank (wipe any managed config)
+        None            — observe (probe only, no writes, no wipes)
     """
     intent = _load_yaml(INTENT_FILE, "intent/class_state.yaml")
     inventory = _load_yaml(INVENTORY_FILE, "infra/inventory.yaml")
@@ -63,7 +66,7 @@ def resolve() -> Dict[str, List[Dict[str, Any]]]:
     if not devices:
         raise ResolverError("infra/inventory.yaml has no devices declared")
 
-    target_state: Dict[str, List[Dict[str, Any]]] = {}
+    target_state: Dict[str, Optional[List[Dict[str, Any]]]] = {}
 
     for device in devices:
         device_name = device.get("name")
@@ -96,13 +99,20 @@ def resolve() -> Dict[str, List[Dict[str, Any]]]:
             profile_name = pre_class.get("profile")
 
         if mode == "blank":
+            # Empty list — reconciler will wipe any managed config.
             target_state[device_name] = []
+            continue
+
+        if mode == "observe":
+            # None — reconciler probes reachability but never writes or wipes.
+            # Distinct from blank ([]) which actively converges to empty.
+            target_state[device_name] = None
             continue
 
         if mode != "preconfigured":
             raise ResolverError(
                 f"unknown mode '{mode}' for device {device_name}; "
-                f"expected 'blank' or 'preconfigured'"
+                f"expected 'blank', 'preconfigured', or 'observe'"
             )
 
         if not profile_name:

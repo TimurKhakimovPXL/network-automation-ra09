@@ -72,8 +72,9 @@ Precedence (most specific wins):
 
 Worked example: rack 9 contains a CSR1000v test router (`lab-dc-h-vm10`)
 and a Catalyst test switch (`lab-dc-h-sw01`). The router should run the
-`csr1000v-test` profile, but the switch must stay blank because that
-profile targets `GigabitEthernet1` which does not exist on the C9200L.
+`csr1000v-test` profile. The switch is not yet safe for the engine to
+write to (no switch-specific handlers, no switch ZTP), so it is set to
+`observe` — the reconciler probes reachability but never writes or wipes.
 
 ```yaml
 session:
@@ -86,11 +87,13 @@ overrides:
     lab-dc-h-vm10:
       mode: preconfigured
       profile: csr1000v-test
+    lab-dc-h-sw01:
+      mode: observe
+      profile: null
 ```
 
-The CSR router gets `csr1000v-test`; the switch falls through to
-`session.pre_class` (blank); every other device in the lab also falls
-through to blank.
+The CSR router gets `csr1000v-test`; the switch is observed only; every
+other device falls through to `session.pre_class` (blank).
 
 Mixing rack and device scopes works the same way — device entries override
 rack entries override the session default:
@@ -103,7 +106,7 @@ overrides:
       profile: ospf-baseline
   devices:
     lab-dc-h-sw01:        # switch in rack 9 — exempt from the rack-wide profile
-      mode: blank
+      mode: observe
       profile: null
 ```
 
@@ -112,6 +115,35 @@ overrides:
 > `overrides.racks:`. The flat form is still honoured for backward
 > compatibility but is deprecated — use `overrides.racks` and
 > `overrides.devices` in new configurations.
+
+### Observation-only mode
+
+`mode: observe` tells the reconciler to probe reachability on every loop
+and report it, but never to write configuration and never to wipe. The
+device appears in reports with `status: observed_reachable` or
+`status: observed_unreachable`, and is excluded from blanket
+`maintenance.wipe_now: true` runs.
+
+This is the right mode for devices the engine cannot yet safely manage.
+Concretely: the lab-dc-h-sw01 Catalyst C9200L has no switch-specific
+handlers and is not covered by the router ZTP flow. Setting it to `blank`
+would attempt to wipe its VLAN configuration on every loop with no path
+to re-bootstrap it; setting it to `preconfigured` against any current
+router profile fails because the interface names don't match. `observe`
+makes the engine's reach over the device explicit: zero.
+
+```yaml
+overrides:
+  devices:
+    lab-dc-h-sw01:
+      mode: observe
+      profile: null         # ignored in observe mode; keep null for clarity
+```
+
+When switch handlers and switch ZTP land, the override is changed to
+`preconfigured` (or removed so the device follows `session.pre_class`).
+Until then, `observe` is the safe default for any device-class the engine
+does not yet understand.
 
 ### Wipe everything immediately
 

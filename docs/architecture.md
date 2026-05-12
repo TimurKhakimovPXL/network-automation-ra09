@@ -110,6 +110,8 @@ Profiles are reusable: `ospf-baseline` can be applied to a class on Tuesday, the
 
 Overrides support two granularities: `overrides.racks[<RAxx>]` applies to every device in a rack, and `overrides.devices[<device-name>]` applies to a single device. Device-level overrides take precedence over rack-level overrides, which take precedence over `session.pre_class`. This matters when a rack contains heterogeneous hardware (e.g. a router and a switch sharing a rack): a per-device override pins each device to a profile it actually supports without forcing the supervisor to split the rack into a separate session. Legacy flat rack keys (`overrides.RA09: { ... }`) remain honoured for backward compatibility.
 
+Three modes are supported: `blank` (actively converge the device to empty by wiping any managed config), `preconfigured` (render and apply a named profile), and `observe` (probe reachability and report it, but never write and never wipe). Observe mode is the safe placeholder for devices the engine cannot yet manage — for example a switch added to inventory before switch-specific handlers and switch ZTP exist. Observe-mode devices are also excluded from blanket `maintenance.wipe_now` runs.
+
 ---
 
 ## 4. The Reconciliation Loop
@@ -242,6 +244,7 @@ The following are not part of this design and should not be added without explic
 | **Drift** | Divergence between declared state and observed state |
 | **Convergence** | Bringing observed state into alignment with declared state |
 | **Pending** | A device that has a declared state to apply but is currently unreachable |
+| **Observe mode** | A device mode (`mode: observe` in `class_state.yaml`) where the reconciler probes reachability and reports it but never writes or wipes. Used for devices the engine cannot yet safely manage. |
 
 ---
 

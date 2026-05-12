@@ -8,5 +8,8 @@ overrides:
     lab-dc-h-vm10:
       mode: preconfigured
       profile: csr1000v-test
+    lab-dc-h-sw01:
+      mode: observe
+      profile: null
 maintenance:
   wipe_now: false

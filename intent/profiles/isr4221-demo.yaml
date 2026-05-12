@@ -24,21 +24,26 @@
 #   - Do NOT touch NIM subslot 0/1 (NIM-2T sync serial) — out of scope.
 # ─────────────────────────────────────────────────────────────────────
 
-changes:
+description: "ISR4221 demo — Loopback-based, zero physical-port impact"
+
+per_device_changes:
   - id: loopback0-description
     type: interface_description
-    interface: Loopback0
+    interface_type: Loopback
+    interface_name: "0"
     description: "Managed by network-automation-ra09 — RA11 demo loopback"
 
   - id: loopback0-ip
     type: interface_ip
-    interface: Loopback0
+    interface_type: Loopback
+    interface_name: "0"
     ip: 192.168.11.1
     mask: 255.255.255.255
     depends_on: loopback0-description
 
   - id: loopback0-state
     type: interface_state
-    interface: Loopback0
+    interface_type: Loopback
+    interface_name: "0"
     state: up
     depends_on: loopback0-ip

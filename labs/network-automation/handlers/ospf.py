@@ -6,10 +6,9 @@ YANG model: Cisco-IOS-XE-ospf (namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-
 Read:  RESTCONF GET  → native/router/ospf={process_id}
 Write: NETCONF edit-config → <router><ospf> subtree
 
-YANG structure differs between IOS XE versions:
-  16.x: network list key "ip mask"     → XML element <mask>
-  17.x: network list key "ip wildcard" → XML element <wildcard>
-Version is detected from NETCONF capabilities at runtime.
+Branches on Cisco-IOS-XE-ospf YANG model revision: revisions before
+2020-11-01 use <mask>, later revisions use <wildcard>. The device's
+IOS XE release number is NOT a reliable proxy; see _get_ospf_model_revision.
 
 Change schema in changes.yaml:
     - type: ospf
@@ -42,27 +41,51 @@ RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/router/
 
 # ── Version detection ──────────────────────────────────────────────────────────
 
-def _get_ios_xe_version(device_params: dict) -> float:
+def _get_ospf_model_revision(device_params: dict) -> str:
     """
-    Connect to device and extract the IOS XE major.minor version from NETCONF
-    capabilities. Returns a float e.g. 16.8, 17.3.
-    Returns 17.0 as safe default if version cannot be determined
-    (17.x behaviour is the current standard going forward).
+    Return the Cisco-IOS-XE-ospf YANG model revision date the device
+    advertises in its NETCONF capabilities, e.g. '2020-07-01'.
+
+    We query the device at runtime because the YANG model revision is
+    what determines the schema (and therefore the element name) that
+    the device's NETCONF parser will accept. The IOS XE release number
+    is NOT a reliable proxy: a device on IOS XE 17.3.4a can ship the
+    mid-2020 (mask) model revision, contradicting the assumption that
+    17.x always uses <wildcard>.
+
+    Returns '2020-11-01' as a safe default if the capability is not
+    found; that date is at-or-after the mask→wildcard transition, so
+    the handler will default to the modern <wildcard> element when
+    detection fails.
     """
     try:
         with manager.connect(**device_params) as m:
+            pattern = re.compile(
+                r'Cisco-IOS-XE-ospf\?module=Cisco-IOS-XE-ospf&revision=(\d{4}-\d{2}-\d{2})'
+            )
             for cap in m.server_capabilities:
-                match = re.search(r'ios-xe[_-](\d+)[._](\d+)', cap, re.IGNORECASE)
+                match = pattern.search(cap)
                 if match:
-                    return float(f"{match.group(1)}.{match.group(2)}")
+                    return match.group(1)
     except Exception:
         pass
-    return 17.0
+    return "2020-11-01"
 
 
-def _is_pre_17(device_params: dict) -> bool:
-    """Returns True if device is running IOS XE 16.x."""
-    return _get_ios_xe_version(device_params) < 17.0
+def _uses_mask_element(device_params: dict) -> bool:
+    """
+    Return True if the device's Cisco-IOS-XE-ospf YANG model uses
+    <mask> for the network list key (older models, revisions before
+    the ~2020-11 transition).
+    Return False if the model uses <wildcard> (newer models).
+
+    Field-observed: a 17.3.4a device shipping the 2020-07-01 revision
+    uses <mask>. Vendored 17.3.1 YANG (from YangModels) uses
+    <wildcard>. The exact transition date is not documented by Cisco;
+    2020-11-01 is the cutoff based on field evidence.
+    """
+    revision = _get_ospf_model_revision(device_params)
+    return revision < "2020-11-01"
 
 
 # ── RESTCONF ───────────────────────────────────────────────────────────────────
@@ -83,16 +106,16 @@ def _restconf_get(device_params: dict, process_id: int) -> requests.Response:
     )
 
 
-def _extract_ospf_state(response: requests.Response, pre_17: bool) -> dict | None:
+def _extract_ospf_state(response: requests.Response, uses_mask: bool) -> dict | None:
     """
     Returns a normalised dict of the current OSPF state for comparison.
-    pre_17=True:  network list uses 'mask' element (16.x YANG)
-    pre_17=False: network list uses 'wildcard' element (17.x YANG)
+    uses_mask=True:  network list uses 'mask' element (older YANG revision)
+    uses_mask=False: network list uses 'wildcard' element (newer YANG revision)
     """
     data         = response.json()
     ospf         = data.get("Cisco-IOS-XE-ospf:ospf", {})
     router_id    = ospf.get("router-id")
-    wildcard_key = "mask" if pre_17 else "wildcard"
+    wildcard_key = "mask" if uses_mask else "wildcard"
 
     networks = [
         {
@@ -131,12 +154,12 @@ def _states_match(current: dict, desired: dict) -> bool:
 
 # ── NETCONF ────────────────────────────────────────────────────────────────────
 
-def _build_network_xml(networks: list[dict], pre_17: bool) -> str:
+def _build_network_xml(networks: list[dict], uses_mask: bool) -> str:
     """
-    16.x: <mask> element (YANG key "ip mask")
-    17.x: <wildcard> element (YANG key "ip wildcard")
+    Older YANG revision (<2020-11-01): <mask> element (YANG key "ip mask")
+    Newer YANG revision:               <wildcard> element (YANG key "ip wildcard")
     """
-    wildcard_elem = "mask" if pre_17 else "wildcard"
+    wildcard_elem = "mask" if uses_mask else "wildcard"
     lines = []
     for n in networks:
         lines.append(f"""
@@ -148,12 +171,12 @@ def _build_network_xml(networks: list[dict], pre_17: bool) -> str:
     return "".join(lines)
 
 
-def _netconf_edit(device_params: dict, change: dict, pre_17: bool) -> None:
+def _netconf_edit(device_params: dict, change: dict, uses_mask: bool) -> None:
     process_id    = change["process_id"]
     router_id     = change.get("router_id", "")
     networks      = change.get("networks", [])
 
-    network_xml   = _build_network_xml(networks, pre_17)
+    network_xml   = _build_network_xml(networks, uses_mask)
     router_id_xml = f"<router-id>{xml.text(router_id)}</router-id>" if router_id else ""
 
     payload = f"""
@@ -188,9 +211,10 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         "status":      None,
     }
 
-    # Detect IOS XE version once — determines YANG element names for this device
-    pre_17 = _is_pre_17(device_params)
-    result["ios_xe_pre_17"] = pre_17
+    # Detect YANG model revision once — determines element names for this device
+    ospf_model_revision = _get_ospf_model_revision(device_params)
+    uses_mask = ospf_model_revision < "2020-11-01"
+    result["ospf_model_revision"] = ospf_model_revision
 
     # 1. Read
     try:
@@ -205,7 +229,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         current = None
     elif response.ok:
         try:
-            current = _extract_ospf_state(response, pre_17)
+            current = _extract_ospf_state(response, uses_mask)
         except Exception as e:
             result["status"] = "read_failed"
             result["error"]  = f"Failed to parse RESTCONF response: {e}"
@@ -224,7 +248,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     # 3. Write
     try:
-        _netconf_edit(device_params, change, pre_17)
+        _netconf_edit(device_params, change, uses_mask)
         result["changed"] = True
     except Exception as e:
         result["status"] = "edit_failed"
@@ -239,7 +263,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
             result["error"]  = f"Verify HTTP {verify_response.status_code}"
             return result
 
-        verified = _extract_ospf_state(verify_response, pre_17)
+        verified = _extract_ospf_state(verify_response, uses_mask)
 
         if _states_match(verified, desired):
             result["status"]   = "success"

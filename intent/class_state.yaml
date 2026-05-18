@@ -10,8 +10,8 @@ overrides:
       mode: preconfigured
       profile: csr1000v-test
     lab-dc-h-sw01:
-      mode: observe
-      profile: null
+      mode: preconfigured
+      profile: c9200l-demo
     LAB-R11-C01-R01:
       mode: preconfigured
       profile: isr4221-physical-test

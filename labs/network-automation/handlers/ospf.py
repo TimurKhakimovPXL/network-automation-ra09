@@ -36,7 +36,10 @@ RESTCONF_HEADERS = {
     "Content-Type": "application/yang-data+json",
 }
 
-RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/router/ospf={process_id}"
+RESTCONF_BASE = (
+    "https://{host}/restconf/data/Cisco-IOS-XE-native:native/router/"
+    "Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={process_id}"
+)
 
 
 # ── Version detection ──────────────────────────────────────────────────────────
@@ -108,25 +111,33 @@ def _restconf_get(device_params: dict, process_id: int) -> requests.Response:
 
 def _extract_ospf_state(response: requests.Response, uses_mask: bool) -> dict | None:
     """
-    Returns a normalised dict of the current OSPF state for comparison.
-    uses_mask=True:  network list uses 'mask' element (older YANG revision)
-    uses_mask=False: network list uses 'wildcard' element (newer YANG revision)
-    """
-    data         = response.json()
-    ospf         = data.get("Cisco-IOS-XE-ospf:ospf", {})
-    router_id    = ospf.get("router-id")
-    wildcard_key = "mask" if uses_mask else "wildcard"
+    Parse the RESTCONF response for a single OSPF process.
 
+    Path is .../router-ospf/ospf/process-id={id}, so the top-level JSON key
+    is module-qualified to the augmenting module: 'Cisco-IOS-XE-ospf:process-id'.
+    Per RFC 8040 a keyed list GET returns the entry as a single-element list;
+    as_list handles dict vs list shape defensively.
+    """
+    data    = response.json()
+    entries = norm.as_list(data.get("Cisco-IOS-XE-ospf:process-id"))
+    if not entries:
+        return None
+    entry = entries[0]
+
+    wildcard_key = "mask" if uses_mask else "wildcard"
     networks = [
         {
             "prefix":   norm.normalize_ipv4(n.get("ip")),
             "wildcard": norm.normalize_ipv4(n.get(wildcard_key)),
             "area":     str(n.get("area", "")),
         }
-        for n in norm.as_list(ospf.get("network"))
+        for n in norm.as_list(entry.get("network"))
     ]
 
-    return {"router_id": norm.normalize_ipv4(router_id), "networks": networks}
+    return {
+        "router_id": norm.normalize_ipv4(entry.get("router-id")),
+        "networks":  networks,
+    }
 
 
 def _desired_state(change: dict) -> dict:
@@ -172,9 +183,22 @@ def _build_network_xml(networks: list[dict], uses_mask: bool) -> str:
 
 
 def _netconf_edit(device_params: dict, change: dict, uses_mask: bool) -> None:
-    process_id    = change["process_id"]
-    router_id     = change.get("router_id", "")
-    networks      = change.get("networks", [])
+    """
+    Wrapped OSPF schema (Cisco-IOS-XE-ospf revision 2020-07-01 onward, both
+    'mask' and 'wildcard' variants).
+
+    Layout:
+      native/router
+        Cisco-IOS-XE-ospf:router-ospf
+          ospf                  (container)
+            process-id          (list, keyed on <id>)
+              id
+              router-id
+              network*
+    """
+    process_id = change["process_id"]
+    router_id  = change.get("router_id", "")
+    networks   = change.get("networks", [])
 
     network_xml   = _build_network_xml(networks, uses_mask)
     router_id_xml = f"<router-id>{xml.text(router_id)}</router-id>" if router_id else ""
@@ -183,11 +207,15 @@ def _netconf_edit(device_params: dict, change: dict, uses_mask: bool) -> None:
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
         <router>
-          <ospf xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ospf">
-            <id>{xml.text(process_id)}</id>
-            {router_id_xml}
-            {network_xml}
-          </ospf>
+          <router-ospf xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ospf">
+            <ospf>
+              <process-id>
+                <id>{xml.text(process_id)}</id>
+                {router_id_xml}
+                {network_xml}
+              </process-id>
+            </ospf>
+          </router-ospf>
         </router>
       </native>
     </config>

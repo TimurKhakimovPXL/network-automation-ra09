@@ -13,8 +13,6 @@
 #   - interface_description  (Loopback0, Gi0/0/1)
 #   - interface_ip           (Loopback0, Gi0/0/1)
 #   - interface_state        (Loopback0, Gi0/0/1)
-#   - ospf                   (process 1, two networks, version-aware
-#                             <wildcard> element on 17.x)
 #
 # ── Safety analysis (verified via RESTCONF probe 2026-05-12) ─────────
 # Why each choice is safe:
@@ -40,12 +38,6 @@
 #     idempotency stays intact on the already-converged interface
 #     while the new tasks light up.
 #
-#   OSPF process 1 — no existing process (RESTCONF returned HTTP 204
-#     on native/router). This is the first OSPF process configured
-#     on the device. The handler uses runtime version detection
-#     from NETCONF capabilities to pick <mask> (16.x) vs <wildcard>
-#     (17.x); this device is 17.3.4, so <wildcard> fires.
-#
 #   Serial 0/1/0, 0/1/1 — NIM-2T sync serial. Out of scope per
 #     inventory.yaml comment block — not referenced anywhere here.
 #
@@ -59,7 +51,7 @@
 # or a manual CLI cleanup outside the automation.
 # ─────────────────────────────────────────────────────────────────────
 
-description: "ISR4221 multi-handler test — Loopback0 + Gi0/0/1 + OSPF area 0"
+description: "ISR4221 multi-handler test — Loopback0 + Gi0/0/1 admin-up"
 
 per_device_changes:
 
@@ -106,17 +98,3 @@ per_device_changes:
     interface_name: "0/0/1"
     state: up
     depends_on: gi001-ip
-
-  # ── OSPF process 1 advertising both networks ─────────────────────
-  - id: ospf-process
-    type: ospf
-    process_id: 1
-    router_id: 192.168.11.1
-    networks:
-      - prefix: 192.168.11.1
-        wildcard: 0.0.0.0
-        area: 0
-      - prefix: 192.0.2.0
-        wildcard: 0.0.0.3
-        area: 0
-    depends_on: gi001-state

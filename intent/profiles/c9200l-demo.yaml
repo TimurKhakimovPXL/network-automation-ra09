@@ -58,4 +58,4 @@ per_device_changes:
     type: interface_description
     interface_type: GigabitEthernet
     interface_name: "1/0/24"
-    description: "Managed by network-automation-ra09 — dit is een test"
+    description: "Managed by network-automation-ra09 — demo port, no client connected"

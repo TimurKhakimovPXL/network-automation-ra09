@@ -69,6 +69,7 @@ network-automation-ra09/
 2. **[docs/oob_network_design.md](docs/oob_network_design.md)** — OOB network the system depends on
 3. **[docs/operator_guide.md](docs/operator_guide.md)** — day-to-day usage
 4. **[docs/network_automation_documentation.md](docs/network_automation_documentation.md)** — engine internals and handler authoring
+5. **[docs/troubleshooting/restconf-keypath-debugging.md](docs/troubleshooting/restconf-keypath-debugging.md)** — diagnostic technique for YANG augmenting modules
 
 ---
 
@@ -143,7 +144,7 @@ cp .env.example .env
 
 ---
 
-## Current Status — 2026-04-28
+## Current Status — 2026-05-18
 
 | Item | Status |
 |---|---|
@@ -173,6 +174,34 @@ All fixes are on `feature/flexible-automation-engine` and committed to the remot
 - `handlers/ospf.py` — Version-aware branching: `<mask>` on 16.x, `<wildcard>` on 17.x
 - `handlers/dhcp_server.py` — Version-aware branching for default-router, dns-server, lease (all changed structure between 16.x and 17.x)
 - 7 other handlers confirmed correct against YANG source files
+
+### Round 3 (2026-05-18) — OSPF schema discovery on real hardware
+
+First hardware-validated routing-protocol convergence (LAB-R11-C01-R01,
+ISR4221, IOS XE 17.3.4a). Three commits on feature/flexible-automation-engine:
+
+- `56a0ba7` — Bug 1: branch on Cisco-IOS-XE-ospf YANG model revision
+  (queried from NETCONF capabilities at runtime), not on IOS XE release
+  number. Release number is not a reliable proxy for schema revision.
+
+- `974e38c` — Bugs 2 & 3 (same root cause): use the augmenting
+  router-ospf container layout, not the flat router/ospf path. RESTCONF
+  read URL and NETCONF write payload both updated; <network> list now
+  lands correctly under the wrapped process-id list.
+
+- `c69e7a7` — Bug 4: hardcode <wildcard> in the wrapped schema.
+  Previous mask-vs-wildcard branching reflected flat-schema CLI
+  translation behaviour, not the augmenting module's actual schema.
+  _uses_mask_element and _get_ospf_model_revision retained as
+  documented seatbelts for future device variants.
+
+Idempotency proven: post-fix ospf task reports `status: success` on
+first run, `status: already_correct` on subsequent runs. Same pattern
+as every other tested handler.
+
+See `docs/network_automation_documentation.md` §3.5 Round 4 and the new
+`docs/troubleshooting/restconf-keypath-debugging.md` for the full
+schema-discovery technique.
 
 ### Architecture Refactor (2026-04-28)
 Major architectural shift from one-shot scripts to continuous reconciliation. Same engine (handlers unchanged), new control plane on top.

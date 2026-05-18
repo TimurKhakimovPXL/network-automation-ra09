@@ -401,6 +401,18 @@ All fixes are on `feature/flexible-automation-engine` and committed.
 | `automate.py` | `handler_exception` only recorded `str(e)` — no way to find the failing line in unattended runs | `traceback.format_exc()` recorded in result dict alongside `str(e)` |
 | `automate.py` | Report counters lumped skipped tasks into `failed` — read as if everything broke | `skipped` counted separately from `failed` in `report.json` |
 
+**Round 4 — OSPF hardware validation (2026-05-18) — augmented YANG schema:**
+
+| File | Issue | Fix |
+|---|---|---|
+| `handlers/ospf.py` | Mask-vs-wildcard branching keyed on IOS XE release number — unreliable proxy for schema revision | Replaced with runtime query of Cisco-IOS-XE-ospf YANG module revision from NETCONF capabilities (commit `56a0ba7`) |
+| `handlers/ospf.py` | RESTCONF read URL and NETCONF write payload targeted legacy flat schema `native/router/ospf={id}`. Read returned "uri keypath not found"; write returned `<ok/>` but silently dropped the `<network>` structured list while landing scalar leaves via CLI translation | Rewrote both paths to use the augmenting `Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={id}` container (commit `974e38c`) |
+| `handlers/ospf.py` | The 2020-11-01 mask-vs-wildcard cutoff was based on flat-schema CLI translation behaviour, not the augmented module's actual schema; augmented schema is `<wildcard>` across all current revisions | `_uses_mask_element` now returns False unconditionally; both `_uses_mask_element` and `_get_ospf_model_revision` retained as documented seatbelts (commit `c69e7a7`) |
+
+Validated on LAB-R11-C01-R01 (ISR4221, IOS XE 17.3.4a, OSPF model
+revision 2020-07-01). First post-fix loop: success. Second loop:
+already_correct. Idempotent.
+
 ---
 
 ## Dependencies

@@ -630,6 +630,87 @@ The report aggregator now distinguishes `skipped` from `failed` in the top-level
 
 Previously, any status outside `(success, already_correct)` was lumped into `failed`. With dependency-aware skipping, this conflated genuine failures with consequences-of-failures, making it harder to read the report at a glance. The new `skipped` counter holds anything with status `skipped_due_to_dependency`; `failed` continues to count real errors.
 
+#### 3.5.9 Round 4 — OSPF Hardware Validation (2026-05-18)
+
+**Affected file:** `handlers/ospf.py`. Three commits on
+`feature/flexible-automation-engine`: `56a0ba7`, `974e38c`, `c69e7a7`.
+
+First hardware-validated routing-protocol convergence surfaced three
+bugs in sequence — only the first identifiable from code review alone.
+Bugs 2 and 3 collapsed to a single root cause once the augmenting-module
+schema layout was understood.
+
+**Bug 1 — model-revision-driven element selection.** The handler
+originally branched between `<mask>` and `<wildcard>` based on IOS XE
+release number (16.x vs 17.x). On `LAB-R11-C01-R01` (17.3.4a) this
+returned the wrong choice because the device ships the `2020-07-01`
+revision of `Cisco-IOS-XE-ospf` — a release-vs-revision mismatch that
+release-number heuristics cannot catch. Replaced with
+`_get_ospf_model_revision()` which extracts the revision from the
+NETCONF `<hello>` capability advertisement at runtime (regex against
+`Cisco-IOS-XE-ospf?module=Cisco-IOS-XE-ospf&revision=(\d{4}-\d{2}-\d{2})`).
+Commit `56a0ba7`.
+
+**Bugs 2 and 3 — wrong YANG container hierarchy.** The RESTCONF read
+URL (`native/router/ospf={id}`) targeted the legacy flat schema. The
+device's 2020-07-01 model wraps OSPF in an *augmenting* container —
+`Cisco-IOS-XE-ospf:router-ospf` under `<native>/<router>`, with `ospf`
+as a child container and `process-id` as the keyed list inside it.
+Symptoms:
+
+- Read returned `{"errors": [{"error-message": "uri keypath not found"}]}`,
+  surfaced as `read_failed` / `verify_failed`.
+- Write returned bare `<ok/>` (no warnings). Scalar leaves
+  (`process-id`, `router-id`) landed via the device's CLI-translation
+  layer, but the structured `<network>` list was silently dropped — the
+  parser cannot map structured lists across schema-shape mismatches the
+  way it can scalar leaves. RESTCONF GET on the wrapped path confirmed
+  `process-id=1` existed with `router-id` set and zero networks.
+
+Diagnostic technique that resolved both: GET the broadest path
+(`…/Cisco-IOS-XE-native:native/router`) without keys, inspect the
+actual response structure. Captured in
+`docs/troubleshooting/restconf-keypath-debugging.md`.
+
+Fix (commit `974e38c`):
+
+- `RESTCONF_BASE` rewritten to
+  `…/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={process_id}`.
+- `_extract_ospf_state` updated to look for `Cisco-IOS-XE-ospf:process-id`
+  at the JSON top level. RFC 8040 specifies a single-element list for
+  keyed-list GET; Cisco returns a dict instead. `norm.as_list()`
+  handles both shapes.
+- `_netconf_edit` payload restructured to nest `<process-id>` inside
+  `<ospf>` inside `<router-ospf xmlns="…Cisco-IOS-XE-ospf">` inside
+  `<router>` inside `<native>`. The `<network>` child element layout
+  itself was already correct from Bug 1's investigation — the problem
+  was the missing parent container.
+
+**Bug 4 — inverted mask-vs-wildcard cutoff.** After commit `974e38c`
+the device rejected the edit-config with `expected tag: wildcard, got
+tag: mask`. The 2020-11-01 cutoff used by Bug 1 was wrong on direction:
+it reflected field evidence from the flat-schema write path, where the
+device's CLI translation layer expected `<mask>`. Once the handler uses
+the augmenting container, CLI translation is no longer involved — the
+actual YANG schema takes over, and the augmenting `Cisco-IOS-XE-ospf`
+module is `<wildcard>`-based at revision 2020-07-01 and every later
+revision. Fix (commit `c69e7a7`): `_uses_mask_element` returns False
+unconditionally; `handle()` sets `uses_mask = False` at the call site.
+Both the helper and `_get_ospf_model_revision` are retained as
+documented seatbelts in case a future device variant genuinely requires
+`<mask>` on a detectable revision.
+
+**Post-fix verification on `LAB-R11-C01-R01`.** First reconcile loop
+after commit `c69e7a7`: ospf task `status: success`, `changed: true`,
+`verified: true`. Second loop: `status: already_correct`,
+`changed: false`. RESTCONF GET on the wrapped path returns both
+declared networks (192.168.11.1/32 and 192.0.2.0/30) under area 0.
+Device-level status: `converged`.
+
+**Outstanding follow-up.** `_get_ospf_model_revision` opens a dedicated
+NETCONF session per OSPF task to read capabilities (~1–2s per task).
+Acceptable in the lab; recorded as cleanup in `technical-notes.md` §9.
+
 
 ### 3.6 YANG Suite — Local Installation
 
@@ -750,6 +831,16 @@ wildcard_elem = "mask" if pre_17 else "wildcard"   # for _build_network_xml
 ```
 
 The version is recorded in `report.json` as `ios_xe_pre_17` for each OSPF task.
+
+> **Update 2026-05-18:** The mask-vs-wildcard policy described in this
+> subsection was based on field evidence against the *flat* OSPF write
+> path (`native/router/ospf={id}`). On hardware (LAB-R11-C01-R01), the
+> handler moved to the augmenting `Cisco-IOS-XE-ospf:router-ospf`
+> container — see §3.5.9. In that container, `<wildcard>` is used
+> across all revisions we currently target, regardless of the
+> 16.x/17.x release distinction this subsection describes. The
+> `_uses_mask_element` hook is retained as a documented seatbelt but
+> returns False unconditionally as of commit `c69e7a7`.
 
 #### 3.7.3 DHCP Server — Version-Aware Pool Structure
 

@@ -77,18 +77,26 @@ def _get_ospf_model_revision(device_params: dict) -> str:
 
 def _uses_mask_element(device_params: dict) -> bool:
     """
-    Return True if the device's Cisco-IOS-XE-ospf YANG model uses
-    <mask> for the network list key (older models, revisions before
-    the ~2020-11 transition).
-    Return False if the model uses <wildcard> (newer models).
+    Return True if the device's Cisco-IOS-XE-ospf YANG model uses <mask>
+    for the network list key.
 
-    Field-observed: a 17.3.4a device shipping the 2020-07-01 revision
-    uses <mask>. Vendored 17.3.1 YANG (from YangModels) uses
-    <wildcard>. The exact transition date is not documented by Cisco;
-    2020-11-01 is the cutoff based on field evidence.
+    Field-observed evidence on LAB-R11-C01-R01 (IOS XE 17.3.4a, model
+    revision 2020-07-01): the wrapped router-ospf/ospf/process-id schema
+    uses <wildcard>, not <mask>. Earlier diagnosis suggesting a
+    2020-11-01 cutoff was based on a different device's behaviour against
+    the flat (legacy, non-augmenting) schema — where the device's CLI
+    translation layer expected <mask>. That path is no longer reachable
+    now that the handler uses the augmented container.
+
+    Every IOS XE device we currently target advertises the augmenting
+    Cisco-IOS-XE-ospf module, and every revision of that module uses
+    <wildcard>. The <mask> branch is therefore unreachable in practice.
+    Keep _get_ospf_model_revision and this function in place as
+    seatbelts — if we ever encounter an older model variant that
+    genuinely needs <mask>, flip the return based on the revision
+    string. For now: always wildcard.
     """
-    revision = _get_ospf_model_revision(device_params)
-    return revision < "2020-11-01"
+    return False
 
 
 # ── RESTCONF ───────────────────────────────────────────────────────────────────
@@ -239,9 +247,12 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         "status":      None,
     }
 
-    # Detect YANG model revision once — determines element names for this device
+    # Detect YANG model revision once — recorded in the report for audit.
+    # The wrapped router-ospf schema always uses <wildcard>; see
+    # _uses_mask_element for the seatbelt that would flip this if a
+    # genuinely <mask>-only model variant ever surfaced.
     ospf_model_revision = _get_ospf_model_revision(device_params)
-    uses_mask = ospf_model_revision < "2020-11-01"
+    uses_mask = False
     result["ospf_model_revision"] = ospf_model_revision
 
     # 1. Read

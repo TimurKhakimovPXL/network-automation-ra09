@@ -29,9 +29,13 @@ network-automation-ra09/
 ├── intent/                                # Layer 4: the control surface
 │   ├── class_state.yaml                   # ← Supervisor edits this
 │   └── profiles/                          # Reusable device-state declarations
-│       ├── blank.yaml
-│       ├── ospf-baseline.yaml
-│       └── routing-and-vlans.yaml
+│       ├── blank.yaml                     # ─┐
+│       ├── ospf-baseline.yaml             #  ├─ reusable templates
+│       ├── routing-and-vlans.yaml         # ─┘
+│       ├── c9200l-demo.yaml               # ─┐
+│       ├── csr1000v-test.yaml             #  ├─ device-targeted profiles
+│       ├── isr4221-demo.yaml              #  │  (pinned via overrides
+│       └── isr4221-physical-test.yaml     # ─┘   in class_state.yaml)
 │
 ├── infra/                                 # Layer 2: hardware as code
 │   ├── inventory.yaml                     # What devices exist (single source)
@@ -149,17 +153,17 @@ cp .env.example .env
 | Item | Status |
 |---|---|
 | `ra09-interface-description` | Tested against real hardware RA09 |
-| `network-automation` (flexible engine) | Built, bugs fixed, pending hardware validation |
+| `network-automation` (flexible engine) | Validated against real hardware: ISR4221 17.3.4a, CSR1000v 16.9.5, C9200L 17.6.3 (2026-05-18) |
 | `ztp` | Written, not yet hardware tested |
-| **Reconciler (continuous loop)** | **Built, pending hardware validation** |
-| **Profiles (`intent/profiles/`)** | **Three template profiles in place (blank, ospf-baseline, routing-and-vlans)** |
-| **Inventory (`infra/inventory.yaml`)** | **All 20 devices catalogued, MACs/IOS versions pending collection** |
+| **Reconciler (continuous loop)** | **Live on controller (lab-dc-h-vm09); converges three platforms idempotently** |
+| **Profiles (`intent/profiles/`)** | **Seven profiles: three reusable templates plus four device-targeted profiles (csr1000v-test, isr4221-demo, isr4221-physical-test, c9200l-demo)** |
+| **Inventory (`infra/inventory.yaml`)** | **22 devices catalogued (20 rack ISR4200s plus three test devices: CSR1000v, ISR4221, C9200L). MACs still pending for the rack fleet.** |
 | **OOB network** | **Designed, not yet built (see [docs/oob_network_design.md](docs/oob_network_design.md))** |
 | Ubuntu automation controller | Confirmed available on ESXi — setup with Leppens pending |
 | DHCP reservations (MAC → IP) | Generator script written, awaiting MAC collection |
 | YANG Suite (local) | Running at `https://localhost:8443` via Podman |
 
-### Bugs Fixed (2026-04-26)
+### Bugs Fixed (rolling — rounds dated below)
 All fixes are on `feature/flexible-automation-engine` and committed to the remote.
 
 **Round 1 — Pre-hardware fixes:**

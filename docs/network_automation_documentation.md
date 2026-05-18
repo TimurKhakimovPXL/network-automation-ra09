@@ -4,7 +4,7 @@ author: Timur Khakimov
 supervisor: Wim Leppens
 institution: PXL University of Applied Sciences
 group: DEVNET
-date: 2026-04-26
+date: 2026-05-18
 status: active
 tags:
   - network-automation
@@ -25,7 +25,7 @@ repository: https://github.com/TimurKhakimovPXL/network-automation-ra09
 - [[#1. Project Overview]]
 - [[#2. Lab Infrastructure]]
 - [[#3. Current Work — The Automation Engine]]
-- [[#3.5 Known Issues Fixed — 2026-04-26]]
+- [[#3.5 Known Issues Fixed]]
 - [[#3.6 YANG Suite — Local Installation]]
 - [[#3.7 YANG Model Audit — Handler Verification]]
 - [[#4. Full Architecture]]
@@ -391,7 +391,7 @@ Each domain is a self-contained module in `handlers/`. Adding a new domain requi
 | `interface_ip` | IPv4 address assignment | `native/interface/{type}={name}/ip/address` |
 | `interface_switchport` | Access / trunk mode and VLANs | `native/interface/{type}={name}/switchport` |
 | `interface_state` | Shutdown / no shutdown | `native/interface/{type}={name}/shutdown` |
-| `ospf` | OSPF process, router-id, networks | `native/router/ospf={process_id}` |
+| `ospf` | OSPF process, router-id, networks | `native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={process_id}` |
 | `static_route` | IPv4 static routes | `native/ip/route` |
 | `vlan` | VLAN definitions on switches | `native/vlan/vlan-list` |
 | `etherchannel` | Port-channel and member interfaces | `native/interface/Port-channel={id}` |
@@ -490,8 +490,9 @@ Cisco IOS XE returns RESTCONF/NETCONF values in shapes that don't always match h
 The `as_list` helper deserves emphasis: it is the single most common source of runtime parser failures against Cisco RESTCONF. Any handler that iterates a value extracted from a YANG list must wrap that value in `as_list()`, otherwise a device with one helper-address (or one VLAN, or one OSPF network) returns a dict that crashes a `for entry in value` loop with `TypeError: 'str' object is not subscriptable` or silently iterates dict keys instead of list entries.
 
 
+### 3.5 Known Issues Fixed
 
-The following bugs were identified by code review prior to hardware validation and corrected on `feature/flexible-automation-engine`.
+The following bugs were identified by code review prior to hardware validation and corrected on `feature/flexible-automation-engine`. Subsequent rounds (3.5.7 onward) add hardening discovered during pre-hardware shakedown and the first hardware validation runs through 2026-05.
 
 #### 3.5.1 NETCONF Key Element: `<n>` vs `<name>`
 
@@ -840,7 +841,10 @@ The version is recorded in `report.json` as `ios_xe_pre_17` for each OSPF task.
 > across all revisions we currently target, regardless of the
 > 16.x/17.x release distinction this subsection describes. The
 > `_uses_mask_element` hook is retained as a documented seatbelt but
-> returns False unconditionally as of commit `c69e7a7`.
+> returns False unconditionally as of commit `c69e7a7`. The report
+> field originally named `ios_xe_pre_17` was renamed to
+> `ospf_model_revision` in commit `56a0ba7` — readers consulting
+> report.json should look for the latter.
 
 #### 3.7.3 DHCP Server — Version-Aware Pool Structure
 

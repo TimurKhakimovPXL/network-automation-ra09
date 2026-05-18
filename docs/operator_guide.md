@@ -70,11 +70,10 @@ Precedence (most specific wins):
 2. `overrides.racks[<RAxx>]` — whole rack
 3. `session.pre_class` — default for everything not overridden
 
-Worked example: rack 9 contains a CSR1000v test router (`lab-dc-h-vm10`)
-and a Catalyst test switch (`lab-dc-h-sw01`). The router should run the
-`csr1000v-test` profile. The switch is not yet safe for the engine to
-write to (no switch-specific handlers, no switch ZTP), so it is set to
-`observe` — the reconciler probes reachability but never writes or wipes.
+Worked example (current production configuration as of 2026-05-18):
+three test devices spanning three platforms, each pinned to its own
+profile. The session default stays `blank` so that any other inventory
+device that comes online falls through to a safe no-op state.
 
 ```yaml
 session:
@@ -88,12 +87,17 @@ overrides:
       mode: preconfigured
       profile: csr1000v-test
     lab-dc-h-sw01:
-      mode: observe
-      profile: null
+      mode: preconfigured
+      profile: c9200l-demo
+    LAB-R11-C01-R01:
+      mode: preconfigured
+      profile: isr4221-physical-test
 ```
 
-The CSR router gets `csr1000v-test`; the switch is observed only; every
-other device falls through to `session.pre_class` (blank).
+The CSR1000v gets `csr1000v-test`, the C9200L switch gets the minimal
+`c9200l-demo` (single interface description on an unused port), and
+the ISR4221 gets the full seven-task `isr4221-physical-test`. Every
+other inventory device falls through to `session.pre_class` (blank).
 
 Mixing rack and device scopes works the same way — device entries override
 rack entries override the session default:
@@ -105,7 +109,8 @@ overrides:
       mode: preconfigured
       profile: ospf-baseline
   devices:
-    lab-dc-h-sw01:        # switch in rack 9 — exempt from the rack-wide profile
+    lab-dc-h-newhw01:     # hypothetical: new device class in rack 9
+                          # whose convergence is not yet validated
       mode: observe
       profile: null
 ```
@@ -125,25 +130,35 @@ device appears in reports with `status: observed_reachable` or
 `maintenance.wipe_now: true` runs.
 
 This is the right mode for devices the engine cannot yet safely manage.
-Concretely: the lab-dc-h-sw01 Catalyst C9200L has no switch-specific
-handlers and is not covered by the router ZTP flow. Setting it to `blank`
-would attempt to wipe its VLAN configuration on every loop with no path
-to re-bootstrap it; setting it to `preconfigured` against any current
-router profile fails because the interface names don't match. `observe`
-makes the engine's reach over the device explicit: zero.
+Concretely: a freshly inventoried device of an unfamiliar class — a
+firewall, a wireless controller, an unfamiliar switch family — has no
+validated convergence path. Setting it to `blank` would attempt to wipe
+state the engine doesn't know how to re-bootstrap; setting it to
+`preconfigured` against a profile authored for a different platform
+would fail at the first interface-name mismatch. `observe` makes the
+engine's reach over the device explicit: zero.
 
 ```yaml
 overrides:
   devices:
-    lab-dc-h-sw01:
+    lab-dc-h-newhw01:
       mode: observe
       profile: null         # ignored in observe mode; keep null for clarity
 ```
 
-When switch handlers and switch ZTP land, the override is changed to
-`preconfigured` (or removed so the device follows `session.pre_class`).
-Until then, `observe` is the safe default for any device-class the engine
-does not yet understand.
+When handlers, ZTP coverage, and a validated profile land for the new
+class, the override is changed to `preconfigured` (or removed so the
+device follows `session.pre_class`). Until then, `observe` is the safe
+default for any device-class the engine does not yet understand.
+
+> **Historical note — lab-dc-h-sw01.** The Catalyst C9200L test switch
+> was in `observe` mode from 2026-04-28 through 2026-05-18 while the
+> engine was hardened (per-device overrides, accurate reporting, OSPF
+> augmenting-schema fixes). It was promoted to `preconfigured` against
+> the minimal `c9200l-demo` profile in commit `88fc47b`, using the
+> existing flat-schema `interface_description` handler on an unused
+> port. The promotion was incremental and per-device — the broader
+> "switch handlers + switch ZTP" effort is still future work.
 
 ### Wipe everything immediately
 
@@ -257,7 +272,7 @@ address: "192.168.{{ rack }}.1"
 
 ## Adding a new domain (interface protocol, routing protocol, etc.)
 
-Out of scope for this guide — see `docs/network_automation_documentation_1.md` section 3.4.2 for handler authoring. Once you write a handler:
+Out of scope for this guide — see `docs/network_automation_documentation.md` section 3.4.2 for handler authoring. Once you write a handler:
 
 1. It's auto-registered in the engine
 2. Use the new `type:` value in any profile

@@ -1,6 +1,13 @@
 # ─────────────────────────────────────────────────────────────────────
 # isr4221-demo — safe Day-N demo profile for the first physical router.
 # ─────────────────────────────────────────────────────────────────────
+# SUPERSEDED 2026-05-18 — replaced by isr4221-physical-test.yaml,
+# which extends this profile with Gi0/0/1 and OSPF process 1.
+# class_state.yaml points LAB-R11-C01-R01 at the physical-test
+# profile, not this one. Retained for reference and as a rollback
+# target should anyone need a Loopback-only demo with zero
+# physical-port impact.
+# ─────────────────────────────────────────────────────────────────────
 #
 # Purpose: prove the engine can declaratively converge a real Cisco
 # ISR4221 against intent, using only handlers that have zero impact on

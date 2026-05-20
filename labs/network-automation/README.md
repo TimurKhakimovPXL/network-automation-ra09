@@ -450,6 +450,34 @@ Validated on LAB-R11-C01-R01 (ISR4221, IOS XE 17.3.4a, OSPF model
 revision 2020-07-01). First post-fix loop: success. Second loop:
 already_correct. Idempotent.
 
+**Round 5 — Dependency cascade unification (2026-05-20):**
+
+| File | Issue | Fix |
+|---|---|---|
+| `reconciler/reconciler.py` | `apply_changes_to_device` tracked failed change **types** in a `failed_types` set, but profiles author `depends_on` by task **id**. Cascade silently never fired in production — `"gi001-ip"` never matched `"interface_ip"` | Reconciler now tracks per-device task outcomes by `id`, matching profile authoring and `automate.py`. Shared logic centralised in `dispatch.py` (commit `7c54ba3`) |
+| `reconciler/reconciler.py` | Reconciler emitted status `"skipped_depends_on"`, `automate.py` emitted `"skipped_due_to_dependency"` — two names for the same event | Unified to `"skipped_due_to_dependency"` (the canonical name from `automate.py`). Operator tooling now sees one consistent status in reports from either entry point |
+| `dispatch.py` | Dependency helpers duplicated and diverged between the two entry points | New shared helpers exported from `dispatch.py`: `SUCCESS_STATUSES`, `SKIPPED_STATUS`, `check_dependencies()`, `record_outcome()`. Both entry points import and use them |
+| `reconciler/reconciler.py` | Docstring documented the broken type-based model | Rewritten to match the actual (ID-based) model |
+
+**Round 6 — DHCP server YANG shape, EtherChannel protocol, OSPF docstring (2026-05-20):**
+
+| File | Issue | Fix |
+|---|---|---|
+| `handlers/dhcp_server.py` | 17.x `<network>` payload missing `<primary-network>` wrapper (per `yang/ios-xe-1731/Cisco-IOS-XE-dhcp.yang:1141`). Same bug in the RESTCONF parser, which read `network.number/mask` directly | XML builder and parser both branch on `pre_17` and emit/read the wrapper |
+| `handlers/dhcp_server.py` | 17.x `<excluded-address>` for ranges missing `<low-high-address-list>` wrapper (per the same YANG file line 657) | Handler now emits the container with repeated `low-high-address-list` children on 17.x; 16.x stays flat |
+| `handlers/dhcp_server.py` | `<pool>` and `<excluded-address>` emitted without the `Cisco-IOS-XE-dhcp` namespace. The module is standalone, not a submodule of native, and augments `/ios:native/ios:ip/ios:dhcp` — descendants must declare the augmenting namespace | Both root elements now carry `xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp"`, matching the convention used by `ospf.py` and `etherchannel.py` |
+| `handlers/dhcp_server.py` | No input validation — malformed IPs / masks / excluded ranges reached the device | New `_validate_change()` returns `invalid_input` before any I/O |
+| `handlers/etherchannel.py` | `protocol: lacp/pagp` accepted in profiles but never written — `<channel-protocol>` (sibling of `<channel-group>` in `config-interface-ethernet-grouping`) was missing | Handler emits `<channel-protocol xmlns="…ethernet">lacp\|pagp</channel-protocol>` next to `<channel-group>`. For `protocol: none` it omits `<channel-protocol>` and forces effective mode to `on` |
+| `handlers/etherchannel.py` | No mode/protocol consistency check. `mode: active` + `protocol: pagp` silently went to device | `_validate_change()` enforces `lacp ↔ {active, passive}`, `pagp ↔ {auto, desirable}`, `none ↔ on` |
+| `handlers/etherchannel.py` | Verification only checked Port-channel description, not whether member interfaces actually received the channel-group config | New `_verify_members()` RESTCONF-GETs each member and verifies channel-group number, mode, and channel-protocol when set. `verify_mismatch` now returns per-member diagnostics |
+| `handlers/ospf.py` | Docstring claimed `Read: native/router/ospf={id}`, but code uses the augmented `native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={id}` (since §3.5.9) | Docstring updated. No code change |
+
+Validation: all 31 tests in `tests/` pass against the new payload
+shapes (run `python -m pytest tests/ -v` from the repo root). Live
+verification of DHCP and EtherChannel deferred — no current profile
+exercises either handler. The first profile that turns either one on
+is where any remaining vendor-specific quirks will surface.
+
 ---
 
 ## Dependencies

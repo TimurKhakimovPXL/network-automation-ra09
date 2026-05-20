@@ -13,10 +13,12 @@
 #   - interface_description  (Loopback0, Gi0/0/1)
 #   - interface_ip           (Loopback0, Gi0/0/1)
 #   - interface_state        (Loopback0, Gi0/0/1)
-#   - ospf                   (process 1, two networks; handler
-#                             branches on Cisco-IOS-XE-ospf YANG
-#                             model revision: <mask> if revision
-#                             < 2020-11-01, else <wildcard>)
+#   - ospf                   (process 1, two networks; handler uses
+#                             the augmenting Cisco-IOS-XE-ospf:router-ospf
+#                             container and emits <wildcard> on every
+#                             revision we currently target — see
+#                             handlers/ospf.py and §3.5.9 of
+#                             network_automation_documentation.md)
 #
 # ── Safety analysis (verified via RESTCONF probe 2026-05-12) ─────────
 # Why each choice is safe:
@@ -107,10 +109,13 @@ per_device_changes:
   # First OSPF process on this device. Two networks:
   #   - 192.168.11.1/32 (Loopback0) in area 0
   #   - 192.0.2.0/30 (Gi0/0/1 subnet) in area 0
-  # Handler queries Cisco-IOS-XE-ospf model revision from NETCONF
-  # capabilities and uses <mask> or <wildcard> accordingly. The
-  # wildcard values in this YAML are normalised by the handler when
-  # the device's model uses <mask> (32 - prefix_len).
+  # Wildcard values below are sent verbatim as the <wildcard> leaf
+  # of the augmenting Cisco-IOS-XE-ospf schema (network list key
+  # is "ip wildcard" on every revision the handler currently writes
+  # against). _get_ospf_model_revision is still queried at runtime
+  # and recorded in report.json as ospf_model_revision for audit,
+  # but _uses_mask_element returns False unconditionally — see
+  # handlers/ospf.py and §3.5.9 of network_automation_documentation.md.
   - id: ospf-process
     type: ospf
     process_id: 1

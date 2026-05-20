@@ -657,7 +657,7 @@ These were addressed in five coordinated changes:
 
 2. **`as_list()` defensive casts at every list-iteration site.** Cisco RESTCONF returns single-entry YANG lists as a dict instead of a list. Without the cast, a device with one helper-address (or one VLAN, or one OSPF network) would crash the parser. Applied to `ospf.py` (networks), `vlan.py` (vlan-list), `static_routes.py` (route entries and fwd-list), `dhcp_server.py` (dns-server-list, default-router-list), `dhcp_relay.py` (helper-address, replacing the previous ad-hoc `isinstance` check), and `hsrp.py` (standby-list, also replacing an ad-hoc check). The pre-existing handlers that already had this defence were ported to use the centralised helper for consistency.
 
-3. **`depends_on` skip logic in `automate.py`.** The dispatcher now tracks per-device task outcomes by `id` and skips any later change whose declared prerequisites did not finish in `(success, already_correct)`. Skipped changes record a `skipped_due_to_dependency` status with the unmet prerequisite list, and propagate the skip to anything depending on them. Prevents `hsrp` running on an interface whose `interface_ip` failed earlier, and similar cascade hazards. See section 3.4.5.
+3. **`depends_on` skip logic.** Both entry points track per-device task outcomes by `id` and skip any later change whose declared prerequisites did not finish in `(success, already_correct)`. Skipped changes record a `skipped_due_to_dependency` status with the unmet prerequisite list, and propagate the skip to anything depending on them. Prevents `hsrp` running on an interface whose `interface_ip` failed earlier, and similar cascade hazards. See section 3.4.5. The shared implementation lives in `dispatch.py` (see §3.5.10) — at the time of this round it was duplicated inline in `automate.py`.
 
 4. **Full traceback capture in `handler_exception` results.** When a handler raises, `automate.py` now records `traceback.format_exc()` in the result dict in addition to `str(e)`. Previously, an unattended run against 20 devices that hit `'NoneType' object has no attribute 'get'` somewhere in a handler had no way to identify which line failed.
 
@@ -762,7 +762,125 @@ Device-level status: `converged`.
 
 **Outstanding follow-up.** `_get_ospf_model_revision` opens a dedicated
 NETCONF session per OSPF task to read capabilities (~1–2s per task).
-Acceptable in the lab; recorded as cleanup in `technical-notes.md` §9.
+Acceptable in the lab; flagged for future cleanup (cache the revision
+per device, or read it once when the device first becomes reachable).
+
+#### 3.5.10 Round 5 — Dependency Cascade Unification (2026-05-20)
+
+**Affected files:** `dispatch.py`, `reconciler/reconciler.py`,
+`labs/network-automation/automate.py`. Single commit on
+`feature/flexible-automation-engine`: `7c54ba3`.
+
+Four related bugs, one root cause. Profiles author dependencies by
+task `id` (`depends_on: gi001-ip`), and `automate.py` had always
+implemented it that way. `reconciler/reconciler.py::apply_changes_to_device`
+implemented it by **change type** instead — tracking a set called
+`failed_types` and looking for `depends_on` strings inside it. The
+cascade silently never fired in production: a failing `interface_ip`
+task with `id: gi001-ip` would not block its dependent `interface_state`
+or `ospf` tasks, because the literal `"gi001-ip"` never matches
+`"interface_ip"` in a set of change-type strings.
+
+Fixes:
+
+1. **Dependency model is ID-only.** Reconciler updated to track per-device
+   task outcomes by `id`, matching profile authoring and `automate.py`
+   behaviour.
+2. **Status name unified.** The reconciler had been emitting
+   `"skipped_depends_on"` while `automate.py` emitted
+   `"skipped_due_to_dependency"`. Operator tooling now sees one
+   consistent name in reports from either entry point.
+3. **Shared dependency logic centralised in `dispatch.py`** — the
+   neutral file both entry points already imported `HANDLERS` from.
+   New helpers: `SUCCESS_STATUSES`, `SKIPPED_STATUS`,
+   `check_dependencies()`, `record_outcome()`. Eliminated the
+   duplicate-and-diverged implementations.
+4. **Reconciler docstring rewritten** to describe the actual (ID-based)
+   model instead of the previously documented (incorrect) type-based one.
+
+Verified with a synthetic cascade test: fail → skip cascade,
+`already_correct` counts as success, both single-string and list forms
+of `depends_on` resolve correctly. Live verification deferred — all
+current production tasks are idempotent, so the dependency logic is
+exercised only in the no-skip happy path. The cascade failure mode
+that motivated this fix can be reproduced on demand by injecting a
+malformed prerequisite into a profile.
+
+#### 3.5.11 Round 6 — DHCP Server YANG Shape, EtherChannel Protocol, OSPF Docstring (2026-05-20)
+
+**Affected files:** `labs/network-automation/handlers/dhcp_server.py`,
+`labs/network-automation/handlers/etherchannel.py`,
+`labs/network-automation/handlers/ospf.py`. Single commit on
+`feature/flexible-automation-engine`: `e348176`. Also adds `tests/`
+with 31 pure-function tests.
+
+Three handler fixes verified against vendored Cisco IOS XE YANG
+modules (`yang/ios-xe-1731/`, `yang/ios-xe-1681/`) and the upstream
+`Cisco-IOS-XE-ethernet` module.
+
+**dhcp_server.py — three confirmed schema bugs on 17.x:**
+
+1. `<network>` payload was missing the `<primary-network>` wrapper.
+   Per `yang/ios-xe-1731/Cisco-IOS-XE-dhcp.yang` line 1141, 17.x wraps
+   `<number>` and `<mask>` inside `<primary-network>`. The handler was
+   emitting them directly, which is the 16.x shape. Same bug applied
+   to the RESTCONF parser, which read `network.number / network.mask`
+   instead of `network["primary-network"]["number"|"mask"]`.
+2. `<excluded-address>` for ranges was missing the
+   `<low-high-address-list>` wrapper. Per the same YANG file line 657,
+   17.x defines `excluded-address` as a container holding multiple
+   list children (`low-address-list`, `low-high-address-list`,
+   plus VRF variants).
+3. `<pool>` and `<excluded-address>` were emitted without the
+   `Cisco-IOS-XE-dhcp` namespace. `Cisco-IOS-XE-dhcp` is a standalone
+   module (not a submodule of native) augmenting
+   `/ios:native/ios:ip/ios:dhcp`, so its descendants must declare the
+   augmenting namespace.
+
+Also added `_validate_change()` to reject malformed IPv4/mask/excluded
+ranges with `status=invalid_input` before any device I/O, and rewrote
+the module docstring to document the 17.x vs 16.x shape differences
+and that the 16.x branch has not been exercised live.
+
+**etherchannel.py — three issues confirmed against
+Cisco-IOS-XE-ethernet.yang (1731):**
+
+1. `protocol: lacp/pagp` was accepted in profiles but never written.
+   Per the ethernet module lines 258–302, `<channel-group>` and
+   `<channel-protocol>` are siblings inside
+   `config-interface-ethernet-grouping`. Handler now emits
+   `<channel-protocol xmlns="…ethernet">lacp|pagp</channel-protocol>`
+   next to `<channel-group>` when protocol is lacp/pagp; for
+   `protocol: none` it omits `<channel-protocol>` and forces the
+   effective mode to `on` (static channel).
+2. No mode/protocol consistency check. `_validate_change` now enforces
+   `lacp ↔ {active, passive}`, `pagp ↔ {auto, desirable}`, `none ↔ on`,
+   and rejects inconsistent combinations with `invalid_input`.
+3. Verification only checked the Port-channel description. Added
+   `_verify_members()` which RESTCONF-GETs each member and verifies
+   the channel-group number, mode, and channel-protocol (when set).
+   `verify_mismatch` now returns the per-member diagnostic list
+   instead of a vague description-only check.
+
+**ospf.py — docstring header only.** Code already used the augmented
+`native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={id}` path
+since §3.5.9; the docstring still claimed the legacy
+`native/router/ospf={id}` path. Behaviour unchanged.
+
+**Tests added:** `tests/` directory with 31 pure-function tests covering
+DHCP 17.x pool XML (primary-network wrapper), DHCP 17.x excluded-address
+(low-high-address-list wrapper), DHCP 17.x default-router/dns-server/lease
+container shapes, DHCP 16.x flat shapes (regression guard), DHCP RESTCONF
+parser handling both shapes, DHCP input validation, EtherChannel member
+XML (channel-protocol with ethernet namespace on both leaves),
+EtherChannel mode/protocol matrix validation, EtherChannel member
+RESTCONF parser handling module-qualified and bare keys. All 31 pass.
+Run with `python -m pytest tests/ -v` from the repo root.
+
+Live verification deferred for both DHCP server and EtherChannel — no
+current profile exercises either handler. The first profile that
+turns either one on is where any remaining vendor-specific quirks
+will surface.
 
 
 ### 3.6 YANG Suite — Local Installation
@@ -854,16 +972,16 @@ All 11 handlers were verified against the actual YANG model source files from th
 | `interface_state` | ✅ Clean | `<shutdown>` presence leaf — correct |
 | `interface_switchport` | ✅ Clean | `<switchport><mode>` — correct |
 | `dhcp_relay` | ✅ Clean | `<ip><helper-address>` — correct |
-| `etherchannel` | ✅ Clean | `channel-group` is in `Cisco-IOS-XE-ethernet` augmenting module — `xmlns` on `<channel-group>` is correct |
+| `etherchannel` | ⚠️ Fixed (Round 6) | `channel-group` namespace was correct, but `channel-protocol` (sibling leaf in `Cisco-IOS-XE-ethernet`) was never emitted even when `protocol: lacp/pagp` was declared. Verification only checked Port-channel description. See §3.5.11 |
 | `vlan` | ✅ Clean | `vlan-list` key `id`, leaf `name` — identical on both versions |
 | `static_routes` | ✅ Clean | `ip-route-interface-forwarding-list`, `fwd-list`, `<name>` for description — confirmed from `Cisco-IOS-XE-ip` submodule |
-| `ospf` | ⚠️ Fixed | Version-aware branching added — see 3.7.2 |
-| `dhcp_server` | ⚠️ Fixed | Version-aware branching added — see 3.7.3 |
+| `ospf` | ⚠️ Fixed | Version-aware branching added — see 3.7.2 (later superseded by the augmenting-schema work in §3.5.9) |
+| `dhcp_server` | ⚠️ Fixed (Rounds 2 & 6) | Version-aware branching (Round 2), then the 17.x `<network>/<primary-network>` and `<excluded-address>/<low-high-address-list>` wrappers plus the Cisco-IOS-XE-dhcp augmenting namespace (Round 6). See §3.7.3 and §3.5.11 |
 | `hsrp` | ⚠️ Fixed | Wrong namespace removed — see 3.7.4 |
 
-Two additional items flagged for hardware validation:
-- `vlan.py` read key `Cisco-IOS-XE-native:vlan` — vlan content comes from augmenting module, response key may differ
-- `dhcp_server.py` read key `Cisco-IOS-XE-native:pool` — same concern
+One item still open for hardware validation:
+- `vlan.py` read key `Cisco-IOS-XE-native:vlan-list` — the vlan-list container is augmented in by `Cisco-IOS-XE-vlan`. Production usage to date is `interface_description` only on the C9200L; no `vlan` task has been pushed against a real switch yet.
+- `dhcp_server.py` read key — resolved in Round 6. The RESTCONF GET on `native/ip/dhcp/pool={name}` returns `Cisco-IOS-XE-native:pool` as the top-level key per YANG conventions, and the parser now unwraps `network → primary-network → {number, mask}` for 17.x.
 
 #### 3.7.2 OSPF — Version-Aware Network Element
 
@@ -902,33 +1020,63 @@ The version is recorded in `report.json` as `ios_xe_pre_17` for each OSPF task.
 
 **Affected file:** `handlers/dhcp_server.py`
 
-Three structural changes between IOS XE versions affect the DHCP pool NETCONF payload:
+Five structural differences between IOS XE 16.x and 17.x affect the DHCP NETCONF payload. The first three were addressed in Round 2; the last two were added in Round 6 (§3.5.11) after re-reading `yang/ios-xe-1731/Cisco-IOS-XE-dhcp.yang` end to end:
 
 | Field | 16.x structure | 17.x structure |
 |---|---|---|
 | `default-router` | `leaf-list default-router` | `container default-router { leaf-list default-router-list }` |
 | `dns-server` | `leaf-list dns-server` | `container dns-server { leaf-list dns-server-list }` |
 | `lease` | `list lease { key "Days"; leaf Days }` | `container lease { choice { container lease-value { leaf days } } }` |
+| `network` | `container network { leaf number; leaf mask }` | `container network { container primary-network { leaf number; leaf mask } }` |
+| `excluded-address` | flat `list excluded-address` keyed on `low-address` | `container excluded-address` with list `low-high-address-list` (key `low-address, high-address`) for ranges |
+
+In addition, the augmenting-module rule: `Cisco-IOS-XE-dhcp` is a standalone module (not a submodule of native) augmenting `/ios:native/ios:ip/ios:dhcp`. Per YANG/NETCONF, its descendants must declare the augmenting namespace. Round 6 added `xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp"` on the root `<pool>` and `<excluded-address>` elements, matching the convention already used in `ospf.py` (`router-ospf`) and `etherchannel.py` (`channel-group`).
 
 **16.x XML:**
 ```xml
-<default-router>172.17.9.17</default-router>
-<dns-server>10.199.64.66</dns-server>
-<lease><Days>1</Days></lease>
+<excluded-address xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp">
+  <low-address>172.17.9.1</low-address>
+  <high-address>172.17.9.5</high-address>
+</excluded-address>
+<pool xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp">
+  <id>RA09-L-Data</id>
+  <network>
+    <number>172.17.9.16</number>
+    <mask>255.255.255.240</mask>
+  </network>
+  <default-router>172.17.9.17</default-router>
+  <dns-server>10.199.64.66</dns-server>
+  <lease><Days>1</Days></lease>
+</pool>
 ```
 
 **17.x XML:**
 ```xml
-<default-router>
-  <default-router-list>172.17.9.17</default-router-list>
-</default-router>
-<dns-server>
-  <dns-server-list>10.199.64.66</dns-server-list>
-</dns-server>
-<lease><lease-value><days>1</days></lease-value></lease>
+<excluded-address xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp">
+  <low-high-address-list>
+    <low-address>172.17.9.1</low-address>
+    <high-address>172.17.9.5</high-address>
+  </low-high-address-list>
+</excluded-address>
+<pool xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp">
+  <id>RA09-L-Data</id>
+  <network>
+    <primary-network>
+      <number>172.17.9.16</number>
+      <mask>255.255.255.240</mask>
+    </primary-network>
+  </network>
+  <default-router>
+    <default-router-list>172.17.9.17</default-router-list>
+  </default-router>
+  <dns-server>
+    <dns-server-list>10.199.64.66</dns-server-list>
+  </dns-server>
+  <lease><lease-value><days>1</days></lease-value></lease>
+</pool>
 ```
 
-Both `_extract_pool` (read) and `_build_pool_xml` (write) branch on the detected version. The version is recorded in `report.json` as `ios_xe_pre_17`.
+Both `_extract_pool` (read) and the XML builders branch on the detected version. The version is recorded in `report.json` as `ios_xe_pre_17`. The 16.x branch is YANG-correct against `yang/ios-xe-1681` but has not been exercised live — only `lab-dc-h-vm10` (CSR1000v 16.9.5) is in the 16.x cohort and no current profile assigns it a DHCP task; treat 16.x as best-effort until validated.
 
 #### 3.7.4 HSRP — Wrong Namespace on `<standby>`
 

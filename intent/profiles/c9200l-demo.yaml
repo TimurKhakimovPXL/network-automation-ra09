@@ -42,13 +42,13 @@
 # ── Context ──────────────────────────────────────────────────────────
 # This profile is the maturity step that moves the C9200L out of
 # observe-only mode. Observe mode was the architectural fix shipped
-# after the 2026-05-12 wipe incident (technical-notes.md §6). The
-# switch stayed observe-only while the engine was being hardened —
-# OSPF schema work, per-device overrides, accurate status. Now that
-# the engine converges idempotently on real hardware (ISR4221 OSPF
-# session, technical-notes.md §11), one minimal preconfigured task is
-# the appropriate next step. The transition is per-device and
-# incremental — nothing else changes.
+# after the 2026-05-12 wipe incident. The switch stayed observe-only
+# while the engine was being hardened — OSPF schema work, per-device
+# overrides, accurate status (see §3.5.9 of
+# docs/network_automation_documentation.md for the OSPF round).
+# Now that the engine converges idempotently on real hardware,
+# one minimal preconfigured task is the appropriate next step. The
+# transition is per-device and incremental — nothing else changes.
 # ─────────────────────────────────────────────────────────────────────
 
 description: "C9200L demo — one description on Gi1/0/24, zero operational impact"

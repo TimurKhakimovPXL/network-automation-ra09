@@ -216,8 +216,12 @@ sudo cat /var/lib/network-automation/reports/latest.json | jq '.devices["LAB-RA0
 (Replace the device name.) Possible statuses:
 
 - `unreachable` — device is off, or OOB cabling broken, or DHCP didn't give it a lease
-- `blank_no_changes` — it's correctly blank, no action needed (this is the expected state when mode=blank)
-- `converged` — it had changes applied; check `change_results` for per-change status
+- `observed_reachable` / `observed_unreachable` — `mode: observe`, probe-only result
+- `blank_confirmed` — `mode: blank`, device probed and found to already carry no managed config (no action taken)
+- `wiped_for_blank_convergence` — `mode: blank`, device had managed config and was wiped this iteration; check `wipe_result`
+- `converged` — every change in `change_results` returned `success` or `already_correct`
+- `converged_with_failures` — at least one change failed (e.g. `edit_failed`, `verify_mismatch`); inspect `change_results`
+- `converged_with_skips` — no failures, but at least one change was skipped via `depends_on` (status `skipped_due_to_dependency`); inspect `change_results` for the unmet prerequisite
 - `convergence_exception` — handler threw; check `traceback` field
 
 ### "The reconciler crashed"

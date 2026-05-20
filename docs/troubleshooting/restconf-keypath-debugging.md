@@ -94,5 +94,4 @@ both paths must be derived from the same diagnostic.
 ## Reference
 
 The OSPF schema discovery session that produced this SOP is captured
-in `technical-notes.md` §11 and
-`docs/network_automation_documentation.md` §3.5.9.
+in `docs/network_automation_documentation.md` §3.5.9.

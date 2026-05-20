@@ -210,6 +210,62 @@ See `docs/network_automation_documentation.md` §3.5 Round 4 and the new
 `docs/troubleshooting/restconf-keypath-debugging.md` for the full
 schema-discovery technique.
 
+### Round 4 (2026-05-20) — Dependency cascade unification
+
+Single commit on `feature/flexible-automation-engine`: `7c54ba3`.
+Four related bugs, one root cause: profiles author `depends_on` by
+task `id`, but `reconciler/reconciler.py` implemented it by change
+type — tracking a `failed_types` set. The cascade silently never
+fired in production. Fixes:
+
+- Dependency model is ID-only across both entry points (reconciler
+  was the broken one; `automate.py` was already ID-based).
+- Status name unified to `skipped_due_to_dependency` — the reconciler
+  had been emitting the divergent `skipped_depends_on`.
+- Shared helpers (`SUCCESS_STATUSES`, `SKIPPED_STATUS`,
+  `check_dependencies`, `record_outcome`) centralised in `dispatch.py`,
+  the file both entry points already imported `HANDLERS` from.
+- Reconciler docstring rewritten to match the actual (ID-based) model.
+
+Verified with a synthetic cascade test (fail → skip cascade,
+`already_correct` counts as success, single-string and list forms of
+`depends_on` both resolve correctly). Live verification deferred —
+all current production tasks are idempotent.
+
+### Round 5 (2026-05-20) — DHCP server YANG shape, EtherChannel protocol
+
+Single commit on `feature/flexible-automation-engine`: `e348176`.
+Three handler fixes verified against vendored Cisco IOS XE YANG
+modules (`yang/ios-xe-1731/`, `yang/ios-xe-1681/`):
+
+- `handlers/dhcp_server.py` — 17.x `<network>` now wraps `<number>` and
+  `<mask>` in `<primary-network>` (was being emitted flat, matching the
+  16.x shape). 17.x `<excluded-address>` ranges now wrap entries in
+  `<low-high-address-list>`. Both `<pool>` and `<excluded-address>` now
+  declare `xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp"` — the
+  augmenting module requires it. RESTCONF parser updated to read the
+  17.x `network.primary-network.{number,mask}` shape. `_validate_change()`
+  rejects malformed IPv4/mask/excluded ranges before any I/O.
+- `handlers/etherchannel.py` — `protocol: lacp/pagp` was being accepted
+  in profiles but never written. Handler now emits
+  `<channel-protocol xmlns="…ethernet">` next to `<channel-group>`,
+  validates mode/protocol consistency (`lacp ↔ {active, passive}`,
+  etc.), and verification now reads every member interface to check
+  channel-group number/mode/protocol — not just the Port-channel
+  description.
+- `handlers/ospf.py` — docstring header brought into line with the
+  augmented router-ospf path the code has used since Round 3. No
+  behaviour change.
+
+Tests: new `tests/` directory at the repo root with 31 pure-function
+tests covering DHCP 17.x and 16.x XML/parser shapes, DHCP input
+validation, EtherChannel XML and validation, and EtherChannel member
+RESTCONF parsing. Run with `python -m pytest tests/ -v` from the repo
+root. All pass.
+
+Live verification of DHCP and EtherChannel still deferred — no current
+profile exercises either handler.
+
 ### Architecture Refactor (2026-04-28)
 Major architectural shift from one-shot scripts to continuous reconciliation. Same engine (handlers unchanged), new control plane on top.
 

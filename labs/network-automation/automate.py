@@ -1,5 +1,5 @@
 """
-automate.py — Universal network automation engine
+automate.py — Network automation engine (CLI debug surface)
 PXL DEVNET — Cisco IOS XE (ISR4200 / Catalyst)
 
 Usage:
@@ -10,8 +10,17 @@ Routes each change to the correct domain handler.
 Writes a structured report to report.json on completion.
 
 Adding a new domain:
-    1. Create handlers/<domain>.py implementing handle(device_params, device_name, change) -> dict
-    2. Register it in HANDLERS below — that's it.
+    1. Create handlers/<domain>.py implementing
+       handle(device_params, device_name, change) -> dict
+    2. Register it in dispatch.py::HANDLERS at the repo root — both
+       this CLI debug entry point and the reconciler will pick it up
+       automatically.
+
+This file is a single-device CLI debug surface: it reads changes.yaml
+and pushes against one device without involving intent/inventory/profile.
+For GitOps reconciliation, the systemd unit network-reconciler.service
+runs reconciler/reconciler.py on a 60s loop. For one-shot reconciliation
+against the real intent stack, use scripts/manual_reconcile.py --dry-run.
 
 Credentials are loaded from .env — never put them in changes.yaml.
 """
@@ -27,34 +36,11 @@ import yaml
 from dotenv import load_dotenv
 
 # ── Handler registry ───────────────────────────────────────────────────────────
-# To add a new domain: import the module and add it here.
-from handlers import (
-    dhcp_relay,
-    dhcp_server,
-    etherchannel,
-    hsrp,
-    interface_description,
-    interface_ip,
-    interface_state,
-    interface_switchport,
-    ospf,
-    static_routes,
-    vlan,
-)
-
-HANDLERS = {
-    "interface_description": interface_description.handle,
-    "interface_ip":          interface_ip.handle,
-    "interface_switchport":  interface_switchport.handle,
-    "interface_state":       interface_state.handle,
-    "ospf":                  ospf.handle,
-    "static_route":          static_routes.handle,
-    "vlan":                  vlan.handle,
-    "etherchannel":          etherchannel.handle,
-    "dhcp_server":           dhcp_server.handle,
-    "dhcp_relay":            dhcp_relay.handle,
-    "hsrp":                  hsrp.handle,
-}
+# HANDLERS is defined once in dispatch.py at the repo root and imported here
+# so both entry points (this CLI tool and reconciler/reconciler.py) share a
+# single registration site.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from dispatch import HANDLERS  # noqa: E402
 
 CHANGES_FILE = "changes.yaml"
 REPORT_FILE  = "report.json"

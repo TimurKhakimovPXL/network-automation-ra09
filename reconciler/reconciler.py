@@ -46,6 +46,10 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+# dispatch.py lives at the repo root — make it importable
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from dispatch import HANDLERS  # noqa: E402
+
 from reconciler import git_watcher, state_resolver
 from reconciler.state_resolver import ResolverError
 
@@ -313,11 +317,9 @@ def perform_wipe(devices: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def apply_changes_to_device(device: Dict[str, Any], changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Bridge between the reconciler and the existing handler engine.
-
-    The existing automate.py expects to be invoked as a CLI with changes.yaml.
-    To call it programmatically per-device, we import the handlers directly and
-    invoke them the same way automate.py does.
+    Apply each change to one device by dispatching through the shared HANDLERS
+    registry (defined in dispatch.py at the repo root). Invokes
+    handler.handle(device_params, device_name, change) per change.
 
     depends_on support:
         A change may declare:
@@ -330,37 +332,6 @@ def apply_changes_to_device(device: Dict[str, Any], changes: List[Dict[str, Any]
 
     Returns a list of result dicts, one per change attempted.
     """
-    # Imported lazily so the reconciler can start even if the engine path is
-    # being adjusted during a refactor.
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "labs" / "network-automation"))
-    from handlers import (
-        dhcp_relay,
-        dhcp_server,
-        etherchannel,
-        hsrp,
-        interface_description,
-        interface_ip,
-        interface_state,
-        interface_switchport,
-        ospf,
-        static_routes,
-        vlan,
-    )
-
-    HANDLERS = {
-        "interface_description": interface_description.handle,
-        "interface_ip":          interface_ip.handle,
-        "interface_switchport":  interface_switchport.handle,
-        "interface_state":       interface_state.handle,
-        "ospf":                  ospf.handle,
-        "static_route":          static_routes.handle,
-        "vlan":                  vlan.handle,
-        "etherchannel":          etherchannel.handle,
-        "dhcp_server":           dhcp_server.handle,
-        "dhcp_relay":            dhcp_relay.handle,
-        "hsrp":                  hsrp.handle,
-    }
-
     device_params = {
         "host":             device["mgmt_ip"],
         "port":             830,

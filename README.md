@@ -25,6 +25,7 @@ See [docs/architecture.md](docs/architecture.md) for the full discussion.
 network-automation-ra09/
 ├── README.md                              # This file
 ├── .env.example                           # Credential template — copy to .env
+├── dispatch.py                            # Single registration site for HANDLERS (shared by reconciler + automate.py)
 │
 ├── intent/                                # Layer 4: the control surface
 │   ├── class_state.yaml                   # ← Supervisor edits this
@@ -91,7 +92,7 @@ python3 automate_interface_desc.py
 ### network-automation
 Flexible multi-domain engine built on the same pattern as the original lab. A single dispatcher routes each change to the correct handler based on the change type. Supports 11 configuration domains — interfaces, routing, switching, DHCP, and gateway redundancy. The script never changes — only the YAML does.
 
-This engine is now invoked **by the reconciler** rather than directly by humans. It still has a CLI entry point for debugging and one-shot runs.
+This engine is invoked by the reconciler in production and by `automate.py` for single-device CLI debugging. Both entry points import the same `HANDLERS` dict from `dispatch.py` at the repo root, so registering a new handler is a single edit.
 
 Supported change types: `interface_description`, `interface_ip`, `interface_switchport`, `interface_state`, `ospf`, `static_route`, `vlan`, `etherchannel`, `dhcp_server`, `dhcp_relay`, `hsrp`
 

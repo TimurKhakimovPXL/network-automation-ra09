@@ -2,42 +2,63 @@
 
 > Dispatcher-based, idempotent configuration engine for Cisco IOS XE using RESTCONF and NETCONF.
 
+This README is for the **engine internals and handler authoring**. For day-to-day
+operation of the lab, see:
+
+- [docs/operator_guide.md](../../docs/operator_guide.md) — the edit-commit-push workflow against `intent/class_state.yaml`
+- [docs/architecture.md](../../docs/architecture.md) — the four-layer GitOps model the engine sits inside
+- [docs/network_automation_documentation.md](../../docs/network_automation_documentation.md) — the longer technical reference
+
 ---
 
 ## Overview
 
-Universal automation engine for full network deployment. Desired state is declared in `changes.yaml`.
-The dispatcher routes each change to the correct domain handler. The script itself never changes —
-only the YAML does.
+Universal dispatcher engine: each YAML change is routed to a per-domain handler that
+performs a read-compare-write-verify cycle against the device. The script itself never
+changes — only the input does. Supports complete rack deployment: interfaces, routing,
+switching, DHCP, and gateway redundancy.
 
-Supports complete rack deployment: interfaces, routing, switching, DHCP, and gateway redundancy.
+In production the engine is invoked by the reconciler, which renders per-device input
+from `intent/class_state.yaml` and `intent/profiles/*.yaml` against `infra/inventory.yaml`.
+The CLI path described in this document — `automate.py` reading `changes.yaml` — is the
+debug and one-shot entry point. The control surface for the lab is the GitOps loop, not
+this file.
 
-Tested on: Cisco IOS XE ISR4200 (16.8+)
+Validated against real hardware: CSR1000v 16.9.5, Catalyst C9200L 17.6.3, ISR4221/K9 17.3.4a.
 
 ---
 
 ## Workflow
 
+Two entry points, one handler set.
+
 ```
-changes.yaml (desired state)
-        │
-        ▼
-   automate.py (dispatcher)
-        │
-        ├── interface_description  → RESTCONF read → compare → NETCONF write → verify
-        ├── interface_ip           → RESTCONF read → compare → NETCONF write → verify
-        ├── interface_switchport   → RESTCONF read → compare → NETCONF write → verify
-        ├── interface_state        → RESTCONF read → compare → NETCONF write → verify
-        ├── ospf                   → RESTCONF read → compare → NETCONF write → verify
-        ├── static_route           → RESTCONF read → compare → NETCONF write → verify
-        ├── vlan                   → RESTCONF read → compare → NETCONF write → verify
-        ├── etherchannel           → RESTCONF read → compare → NETCONF write → verify
-        ├── dhcp_server            → RESTCONF read → compare → NETCONF write → verify
-        ├── dhcp_relay             → RESTCONF read → compare → NETCONF write → verify
-        └── hsrp                   → RESTCONF read → compare → NETCONF write → verify
-                                                        │
-                                                        ▼
-                                                  report.json
+(a) Reconciler (production)              (b) CLI debug
+─────────────────────────────            ──────────────────
+intent/class_state.yaml                  changes.yaml
+intent/profiles/*.yaml                          │
+infra/inventory.yaml                            │
+        │                                       │
+        ▼                                       ▼
+  state_resolver                          automate.py
+        │                                  (dispatcher)
+        ▼                                       │
+  per-device change list                        │
+        │                                       │
+        └──────────────────┬────────────────────┘
+                           ▼
+                  ┌──────────────────┐
+                  │ handlers/        │
+                  │   (11 domains)   │
+                  └──────────────────┘
+                           │
+            RESTCONF read → compare → NETCONF write → verify
+                           │
+        ┌──────────────────┴──────────────────┐
+        ▼                                     ▼
+reconciler.py aggregates              automate.py writes
+into /var/lib/network-automation      report.json in the
+/reports/latest.json                  working directory
 ```
 
 ---
@@ -83,9 +104,14 @@ cp .env.example .env
 
 ---
 
-## Configuration
+## Configuration — Handler Input Shape
 
-Edit `changes.yaml` to declare desired state. Supported change types:
+The schemas below describe the input shape each handler consumes. Whether the producer is
+`changes.yaml` (CLI debug path) or a profile rendered by the reconciler against the
+inventory (production path), the handler sees the same per-change dict. Treat these
+sections as the source of truth for handler input.
+
+Supported change types:
 
 ### interface_description
 
@@ -307,13 +333,17 @@ Useful for the first hardware run against a new platform. Disable afterwards to 
 
 ---
 
-## Usage
+## Usage (CLI Debug Path)
 
 ```bash
 python3 automate.py
 ```
 
-Reads `changes.yaml`, writes `report.json` on completion.
+Reads `changes.yaml` from the working directory and writes `report.json` on completion.
+This invocation is for handler development and one-shot debugging — bypassing the
+reconciler is intentional here. For the production GitOps workflow (edit
+`intent/class_state.yaml`, commit, push, wait 60s), see
+[docs/operator_guide.md](../../docs/operator_guide.md).
 
 ---
 

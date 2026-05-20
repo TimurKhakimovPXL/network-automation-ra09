@@ -17,6 +17,8 @@ This is the architectural property that makes "wipe everything in one command" s
 
 ## 2. Current State
 
+The engine is currently running in production against three test devices on the existing data center subnets — `lab-dc-h-vm10` (CSR1000v on `10.199.64.91`), `lab-dc-h-sw01` (Catalyst C9200L on `172.19.11.5`), and `LAB-R11-C01-R01` (ISR4221 on `172.19.11.2`). These devices use the school's existing management network, not OOB. This document describes the network buildout required to extend that deployment to the 20 rack ISR4200s, where data-plane misconfiguration by students makes a dedicated management path mandatory rather than convenient.
+
 **The OOB ports are not in use.** The ISR4200's `GigabitEthernet0` port on every device in the lab is currently unconnected. Devices are managed today via data-plane interfaces, which means:
 
 - Lab management is fragile — students breaking data-plane breaks management

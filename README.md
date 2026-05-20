@@ -135,6 +135,8 @@ sudo journalctl -u network-reconciler -f
 
 Rack addressing (X = rack number): C01 mgmt `172.17.X.2/28`, C02 mgmt `172.17.X.66/28` *(provisional — see [docs/oob_network_design.md](docs/oob_network_design.md) §4 for the open OOB subnet decision)*
 
+The three currently-validated devices live outside the rack scheme on existing lab subnets: `lab-dc-h-vm10` on `10.199.64.91`, `lab-dc-h-sw01` on `172.19.11.5`, and `LAB-R11-C01-R01` on `172.19.11.2`. The rack scheme above applies once OOB is built out.
+
 ---
 
 ## Credentials

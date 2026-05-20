@@ -81,7 +81,7 @@ Each layer depends only on the layer below it. Changes at one layer don't ripple
 
 11 domain handlers (interface_description, interface_ip, interface_switchport, interface_state, ospf, static_route, vlan, etherchannel, dhcp_server, dhcp_relay, hsrp). Each implements a `handle(device_params, device_name, change) -> dict` interface. Each performs the read-compare-write-verify cycle for its YANG domain.
 
-This layer is unchanged from the existing flexible engine. Adding a new domain is still: write a handler, register it.
+This layer is unchanged from the existing flexible engine. Adding a new domain is still: write a handler, then register it in `dispatch.py` at the repo root. That file is the single registration site shared by the reconciler and the `automate.py` CLI debug surface — both entry points import the same `HANDLERS` dict, so a single edit picks up everywhere.
 
 ### 3.2 Layer 2 — Inventory
 

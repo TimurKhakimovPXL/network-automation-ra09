@@ -167,16 +167,43 @@ Each rack gets its own VLAN and subnet block based on rack number X.
 ```
 network-automation-ra09/
 ├── README.md                          # Repository index
-└── labs/
+│
+├── intent/                            # GitOps control surface (production)
+│   ├── class_state.yaml               # Supervisor edits this file
+│   └── profiles/                      # Reusable device-state declarations
+│
+├── infra/                             # Hardware as code (production)
+│   ├── inventory.yaml                 # Device catalogue (single source)
+│   └── dhcp_reservations.yaml         # MAC → IP bindings
+│
+├── reconciler/                        # Continuous reconciliation loop (production)
+│   ├── reconciler.py                  # systemd entry point on lab-dc-h-vm09
+│   ├── state_resolver.py              # intent + inventory → target state
+│   ├── git_watcher.py                 # Git pull and SHA tracking
+│   └── systemd/
+│       └── network-reconciler.service
+│
+├── scripts/                           # Operational tooling
+│   ├── apply_dhcp_reservations.py     # Renders Windows DHCP config from inventory
+│   └── manual_reconcile.py            # One-shot reconcile with --dry-run
+│
+├── docs/                              # System documentation
+│   ├── architecture.md
+│   ├── oob_network_design.md
+│   ├── operator_guide.md
+│   ├── network_automation_documentation.md   # This file
+│   └── troubleshooting/
+│
+└── labs/                              # Dev and historical area
     ├── ra09-interface-description/    # Day-N: interface description automation (tested)
     │   ├── automate_interface_desc.py
     │   ├── changes.yaml
     │   ├── report.json
     │   ├── requirements.txt
     │   └── README.md
-    ├── network-automation/            # Day-N: flexible multi-domain engine (feature branch)
+    ├── network-automation/            # Day-N: flexible multi-domain engine (invoked by reconciler)
     │   ├── automate.py
-    │   ├── changes.yaml
+    │   ├── changes.yaml               # CLI debug input only — not the GitOps control surface
     │   ├── report.json
     │   ├── requirements.txt
     │   ├── README.md
@@ -196,6 +223,11 @@ network-automation-ra09/
         ├── ztp.py
         └── README.md
 ```
+
+The `intent/`, `infra/`, `reconciler/`, and `scripts/` directories form the production
+deployment path — the GitOps loop running on `lab-dc-h-vm09`. The `labs/` directory holds
+the engine itself plus earlier single-domain and Day-0 work; it is the dev and historical
+area, invoked by the reconciler rather than by humans in production.
 
 ### 3.2 Lab: ra09-interface-description (Day-N, tested)
 
@@ -573,6 +605,14 @@ The correct key is `Cisco-IOS-XE-ospf:ospf` on all IOS XE versions from 16.8 thr
 
 #### 3.5.6 OSPF RESTCONF JSON Key
 
+> **Superseded 2026-05-18 — see §3.5.9.** The wrapped/augmented schema
+> introduced in commit `974e38c` moved the RESTCONF read path off
+> `native/router/ospf={id}` entirely. The top-level JSON key on the
+> wrapped path is `Cisco-IOS-XE-ospf:process-id`, not
+> `Cisco-IOS-XE-ospf:ospf`. The fix described in this subsection was
+> correct against the flat path but is no longer the read path the
+> handler uses. Retained for the hardening narrative.
+
 **Affected file:** `handlers/ospf.py`
 
 The `_extract_ospf_state()` function was reading the RESTCONF response using the wrong JSON key:
@@ -920,7 +960,7 @@ The complete solution is divided into three phases. The flexible automation engi
 ### 4.2 Phase 1 — Day-0: Zero Touch Provisioning
 
 > [!SUCCESS] Confirmed
-> DHCP option 67 is supported on the school DHCP server. ZTP is the confirmed Day-0 path. Ubuntu server is available on ESXi. Both will be configured together with the lab supervisor.
+> DHCP option 67 is supported on the school DHCP server. ZTP is the confirmed Day-0 path. The Ubuntu automation controller is live as `lab-dc-h-vm09` (10.199.64.90).
 
 Boot sequence for a wiped device:
 
@@ -963,7 +1003,7 @@ The flexible engine in `labs/network-automation/` handles full desired-state pus
 - DHCP server pools and relay
 - HSRP gateway redundancy
 
-Each handler uses a different YANG model but the same read-compare-write-verify pattern. The engine is on `feature/flexible-automation-engine` and pending hardware validation before merge to main.
+Each handler uses a different YANG model but the same read-compare-write-verify pattern. The engine has been validated against three platforms — CSR1000v 16.9.5, Catalyst C9200L 17.6.3, and ISR4221/K9 17.3.4a (see §3.5.9 for the OSPF schema work that completed validation) — and is awaiting merge of `feature/flexible-automation-engine` to `main`.
 
 ### 4.5 Optional Extension — Firmware Version Enforcement
 
@@ -1001,7 +1041,14 @@ ALL DEVICES CONFIGURED — report.json generated
 
 ### 4.7 Ubuntu Automation Controller
 
-The Ubuntu server (VM on `LAB-DC-H-ESXi02`, confirmed available) acts as the central automation controller. It hosts the automation scripts, `changes.yaml`, and generated reports. The Day-N script is run on demand or on a schedule. No tooling beyond `requirements.txt` is required.
+The Ubuntu server `lab-dc-h-vm09` (10.199.64.90, VM on `LAB-DC-H-ESXi02`) acts as the
+central automation controller. The reconciler runs there as a systemd service
+(`network-reconciler`) on a 60-second loop: it pulls the repository, resolves
+`intent/class_state.yaml` against `infra/inventory.yaml` and the relevant profile, and
+dispatches per-device change lists through the engine. Per-run reports land in
+`/var/lib/network-automation/reports/`, with `latest.json` as the most recent. The
+service logs to the journal — `sudo journalctl -u network-reconciler -f` follows live.
+No tooling beyond `reconciler/requirements.txt` is required on the controller.
 
 ---
 
@@ -1011,8 +1058,8 @@ The Ubuntu server (VM on `LAB-DC-H-ESXi02`, confirmed available) acts as the cen
 
 | # | Question | Answer |
 |---|---|---|
-| 1 | Can DHCP option 67 be set on the school DHCP server? | **Yes** — will be configured together next week |
-| 2 | Is an Ubuntu server VM available on the ESXi host? | **Yes** — will be set up together next week |
+| 1 | Can DHCP option 67 be set on the school DHCP server? | **Yes** — confirmed as the Day-0 path |
+| 2 | Is an Ubuntu server VM available on the ESXi host? | **Yes** — live as `lab-dc-h-vm09` (10.199.64.90), running the reconciler under systemd |
 | 3 | Console access if ZTP not possible? | **Not needed** — option 67 confirmed |
 
 ---
@@ -1084,6 +1131,60 @@ Both read `changes.yaml` from the working directory and write `report.json` on c
 ### 6.5 Verifying Results
 
 Inspect `report.json`. The `total_tasks`, `success`, `already_correct`, and `failed` fields give an immediate overview. The `results` array contains per-task detail including old/new values and any error messages.
+
+### 6.6 Reconciler Path (Production)
+
+The CLI invocations in §6.4 are the debug and development path. In production, the
+engine is driven by the reconciler running on `lab-dc-h-vm09` — operators do not run
+`automate.py` directly.
+
+**Day-to-day operator loop:**
+
+```bash
+git pull
+$EDITOR intent/class_state.yaml
+git commit -am "configure for tomorrow's class"
+git push
+# wait ~60s, the reconciler picks up the new SHA and converges
+```
+
+**Dry-run before committing:**
+
+```bash
+# on the controller (lab-dc-h-vm09), against the current working tree
+python3 scripts/manual_reconcile.py --dry-run
+```
+
+`manual_reconcile.py` resolves `intent/class_state.yaml` and the relevant profile against
+`infra/inventory.yaml`, probes device reachability, and prints what would be done — but
+applies no changes. Useful for sanity-checking a class_state change before pushing.
+
+**The systemd unit:**
+
+```bash
+sudo systemctl status  network-reconciler
+sudo systemctl restart network-reconciler
+sudo journalctl -u network-reconciler -f
+```
+
+The unit lives in `reconciler/systemd/network-reconciler.service` and runs the
+reconciler on a 60-second loop.
+
+**Where reports land:**
+
+```
+/var/lib/network-automation/reports/
+├── latest.json                              # symlink to most recent run
+└── reconcile-<YYYYMMDDTHHMMSSZ>.json        # per-run reports
+```
+
+Each report has the same status counters as the CLI `report.json` plus per-device
+detail and a `git` block recording the head SHA that produced the run. For a one-line
+health check after a push:
+
+```bash
+sudo cat /var/lib/network-automation/reports/latest.json | jq '{success, already_correct, skipped, failed}'
+```
 
 ---
 

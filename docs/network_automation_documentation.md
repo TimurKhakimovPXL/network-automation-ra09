@@ -955,7 +955,7 @@ podman-compose up -d --no-build
 
 ### 4.1 Overview
 
-The complete solution is divided into three phases. The flexible automation engine in `network-automation` is the implementation of Phase 3 — built and ready for hardware validation on the feature branch.
+The complete solution is divided into three phases. The flexible automation engine in `network-automation` is the implementation of Phase 3 — built, hardware-validated against three platforms (see §3.5.9), and awaiting merge of `feature/flexible-automation-engine` to `main`.
 
 ### 4.2 Phase 1 — Day-0: Zero Touch Provisioning
 
@@ -988,13 +988,13 @@ Device reachable via SSH / NETCONF / RESTCONF
 
 ### 4.3 Phase 2 — Inventory Management
 
-Static DHCP reservations map each device's MAC address to a fixed IP. This ensures the same IP survives every wipe and reprovision. `changes.yaml` remains stable and requires no updates after the initial setup.
+Static DHCP reservations map each device's MAC address to a fixed IP. This ensures the same IP survives every wipe and reprovision. `infra/inventory.yaml` — the catalogue the reconciler resolves device addresses against — remains stable and requires no updates after the initial setup.
 
 MACs are recorded once during physical setup and entered into the school DHCP server. The `ztp.py` script itself requires no MAC list.
 
 ### 4.4 Phase 3 — Day-N: Configuration Push
 
-The flexible engine in `labs/network-automation/` handles full desired-state push across all devices. `changes.yaml` declares the target state for all 10+ devices. `automate.py` runs from the Ubuntu automation controller and pushes the full desired state via 11 domain handlers:
+The flexible engine in `labs/network-automation/` handles full desired-state push across all devices. On the controller `lab-dc-h-vm09`, the reconciler resolves `intent/class_state.yaml` against `infra/inventory.yaml` and the relevant profile, then dispatches the per-device change list through the engine's 11 domain handlers:
 
 - Interface configuration (IP addresses, descriptions, shutdown state, switchport mode)
 - VLAN definitions on switches
@@ -1028,15 +1028,16 @@ DEVICE WIPED
      |
      v
 [PHASE 3 — DAY-N: CONFIG PUSH]
-  For each device in changes.yaml:
+  For each device in the resolved change list:
     RESTCONF GET  -> read current state
     Compare       -> detect delta
     NETCONF write -> apply changes
     RESTCONF GET  -> verify
-    Write to report.json
      |
-     v
-ALL DEVICES CONFIGURED — report.json generated
+     +-> production:  reconciler aggregates into
+     |                /var/lib/network-automation/reports/latest.json
+     |
+     +-> CLI debug:   automate.py writes report.json in the working dir
 ```
 
 ### 4.7 Ubuntu Automation Controller
@@ -1088,8 +1089,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Flexible engine (feature branch)
-git checkout feature/flexible-automation-engine
+# Flexible engine
 cd labs/network-automation
 python3 -m venv venv
 source venv/bin/activate

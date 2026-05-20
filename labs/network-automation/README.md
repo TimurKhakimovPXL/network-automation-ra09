@@ -68,7 +68,7 @@ into /var/lib/network-automation      report.json in the
 ```
 labs/network-automation/
 ├── automate.py          # Universal entry point — run this
-├── changes.yaml         # Desired state — only file you edit day to day
+├── changes.yaml         # CLI debug input only — not the GitOps control surface
 ├── report.json          # Generated on each run, do not edit
 ├── debug/               # Generated on verify_mismatch — raw RESTCONF responses
 ├── requirements.txt
@@ -258,7 +258,7 @@ Supported change types:
 
 ## Change Ordering and Dependencies
 
-**Order in `changes.yaml` matters.** Changes execute top-to-bottom in the order they appear.
+**Order in the change list matters.** Changes execute top-to-bottom in the order they appear.
 The engine does not perform automatic dependency resolution — ordering is the operator's responsibility,
 expressed declaratively in YAML. Author the layer-1/2/3 stack bottom-up:
 
@@ -359,7 +359,12 @@ reconciler is intentional here. For the production GitOps workflow (edit
 4. Use `norm.normalize_*()` on both sides of every `_states_match` comparison
 5. Call `_debug.capture(device_name, "<type>", "verify", response, change=change, force=True)`
    in the `verify_mismatch` branch
-6. Import and register the handler in `HANDLERS` in `automate.py`
+6. Import and register the handler in `HANDLERS` in `automate.py` **and** in the
+   separate `HANDLERS` dict in `reconciler/reconciler.py`. The two dicts have the same
+   shape (`change_type → module.handle`) but are independent copies — the CLI path
+   imports from `automate.py`, the production path from the reconciler. Adding a
+   handler to only one will make it visible from one entry point and invisible from
+   the other.
 
 That's it — no other files change.
 

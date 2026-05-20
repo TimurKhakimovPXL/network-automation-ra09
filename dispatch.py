@@ -68,4 +68,67 @@ HANDLERS: Dict[str, HandlerFn] = {
     "hsrp":                  hsrp.handle,
 }
 
-__all__ = ["HANDLERS", "HandlerFn"]
+
+# ─── Dependency resolution ───────────────────────────────────────
+# Shared between reconciler/reconciler.py::apply_changes_to_device
+# and labs/network-automation/automate.py. Both entry points use
+# task-id based dependencies — profiles declare `depends_on: <id>`
+# referring to other tasks in the same per-device run.
+#
+# Statuses that count as "success" for dependency purposes:
+#   - success         — task ran and verified
+#   - already_correct — task was idempotent, no write needed
+#
+# Any other status (failure, skipped, exception) blocks dependents.
+
+SUCCESS_STATUSES = frozenset({"success", "already_correct"})
+SKIPPED_STATUS = "skipped_due_to_dependency"
+
+
+def check_dependencies(
+    change: dict,
+    task_status: dict[str, str],
+) -> list[str]:
+    """Return the list of unmet prerequisite IDs for this change.
+
+    A prerequisite is unmet if its recorded status is not in
+    SUCCESS_STATUSES, or if it's referenced but never ran (not in
+    task_status at all — operator typo, or referenced a task that
+    comes later in document order).
+
+    Returns [] if all prerequisites are met or the change has no
+    depends_on.
+    """
+    depends_on = change.get("depends_on") or []
+    if isinstance(depends_on, str):
+        depends_on = [depends_on]
+
+    return [
+        dep_id for dep_id in depends_on
+        if task_status.get(dep_id) not in SUCCESS_STATUSES
+    ]
+
+
+def record_outcome(
+    change: dict,
+    result: dict,
+    task_status: dict[str, str],
+) -> None:
+    """Record outcome of `change` in task_status if it declared an id.
+
+    Tasks without an id are still executed and reported but can't
+    be referenced by depends_on from later tasks.
+    """
+    task_id = change.get("id")
+    if task_id:
+        task_status[task_id] = result.get("status", "unknown")
+
+
+__all__ = [
+    "HANDLERS",
+    "HandlerFn",
+    "SUCCESS_STATUSES",
+    "SKIPPED_STATUS",
+    "check_dependencies",
+    "record_outcome",
+]

@@ -40,7 +40,13 @@ from dotenv import load_dotenv
 # so both entry points (this CLI tool and reconciler/reconciler.py) share a
 # single registration site.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from dispatch import HANDLERS  # noqa: E402
+from dispatch import (  # noqa: E402
+    HANDLERS,
+    SUCCESS_STATUSES,
+    SKIPPED_STATUS,
+    check_dependencies,
+    record_outcome,
+)
 
 CHANGES_FILE = "changes.yaml"
 REPORT_FILE  = "report.json"
@@ -142,11 +148,9 @@ def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
 def write_report(results: list[dict]) -> None:
     success = sum(1 for r in results if r.get("status") == "success")
     already = sum(1 for r in results if r.get("status") == "already_correct")
-    skipped = sum(1 for r in results if r.get("status") == "skipped_due_to_dependency")
-    failed  = sum(
-        1 for r in results
-        if r.get("status") not in ("success", "already_correct", "skipped_due_to_dependency")
-    )
+    ok_or_skipped = SUCCESS_STATUSES | {SKIPPED_STATUS}
+    skipped = sum(1 for r in results if r.get("status") == SKIPPED_STATUS)
+    failed  = sum(1 for r in results if r.get("status") not in ok_or_skipped)
 
     report = {
         "generated_at":    datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
@@ -203,44 +207,26 @@ def main() -> None:
 
         device_params = build_device_params(device, username, password)
 
-        # Track per-device task outcomes by id so later changes can declare
-        # depends_on: <id> and be skipped if their prerequisite failed.
-        # This prevents cascade failures (e.g. HSRP running on an interface
-        # whose IP assignment failed earlier in the same run).
         device_task_status: dict[str, str] = {}
 
         for change in changes:
-            # Skip if any declared prerequisite did not finish successfully.
-            depends_on = change.get("depends_on") or []
-            if isinstance(depends_on, str):
-                depends_on = [depends_on]
-
-            unmet = [
-                dep for dep in depends_on
-                if device_task_status.get(dep) not in ("success", "already_correct")
-            ]
-
+            unmet = check_dependencies(change, device_task_status)
             if unmet:
                 result = {
                     "device_name": device_name,
                     "type":        change.get("type"),
                     "id":          change.get("id"),
-                    "status":      "skipped_due_to_dependency",
+                    "status":      SKIPPED_STATUS,
                     "error":       f"Prerequisite task(s) did not succeed: {unmet}",
                 }
                 all_results.append(result)
+                record_outcome(change, result, device_task_status)
                 log(f"  [SKIP] {change.get('type')} — depends_on unmet: {unmet}")
-                # Record the skip so anything depending on this also skips
-                if change.get("id"):
-                    device_task_status[change["id"]] = "skipped_due_to_dependency"
                 continue
 
             result = dispatch(device_params, device_name, change)
             all_results.append(result)
-
-            # Record outcome for later depends_on resolution
-            if change.get("id"):
-                device_task_status[change["id"]] = result.get("status", "unknown")
+            record_outcome(change, result, device_task_status)
 
             status = result.get("status", "unknown")
             if status == "success":

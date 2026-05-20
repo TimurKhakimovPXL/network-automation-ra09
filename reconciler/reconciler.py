@@ -48,7 +48,13 @@ from dotenv import load_dotenv
 
 # dispatch.py lives at the repo root — make it importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from dispatch import HANDLERS  # noqa: E402
+from dispatch import (  # noqa: E402
+    HANDLERS,
+    SUCCESS_STATUSES,
+    SKIPPED_STATUS,
+    check_dependencies,
+    record_outcome,
+)
 
 from reconciler import git_watcher, state_resolver
 from reconciler.state_resolver import ResolverError
@@ -315,93 +321,90 @@ def perform_wipe(devices: List[Dict[str, Any]]) -> Dict[str, Any]:
 # ─── Apply changes via existing engine ───────────────────────────────────────
 
 
-def apply_changes_to_device(device: Dict[str, Any], changes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def apply_changes_to_device(
+    device: Dict[str, Any],
+    changes: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
     """
-    Apply each change to one device by dispatching through the shared HANDLERS
-    registry (defined in dispatch.py at the repo root). Invokes
-    handler.handle(device_params, device_name, change) per change.
+    Apply each change to one device by dispatching through the
+    shared HANDLERS registry (defined in dispatch.py at the repo
+    root).
 
-    depends_on support:
-        A change may declare:
-            depends_on: interface_ip          # single string
-            depends_on: [interface_ip, vlan]  # list
-        If any declared dependency type failed earlier in this device's run,
-        the change is skipped and recorded as status='skipped_depends_on'.
-        The skip cascades: a skipped change also adds its own type to the
-        failed set, so anything depending on it is also skipped.
+    Dependency model — ID-based:
+        depends_on: gi001-ip             # single id
+        depends_on: [gi001-ip, vlans]    # list of ids
+        (omitted)                        # no prerequisites
 
-    Returns a list of result dicts, one per change attempted.
+    If any prerequisite did not finish in (success, already_correct),
+    the task is skipped with status='skipped_due_to_dependency' and
+    the skip cascades — anything depending on a skipped task is also
+    skipped. Tasks without an `id` are executed in document order
+    but cannot be referenced as prerequisites.
+
+    Both this function and labs/network-automation/automate.py call
+    the same dependency helpers from dispatch.py, so CLI debug runs
+    and reconciler runs apply identical dependency semantics.
     """
     device_params = {
-        "host":             device["mgmt_ip"],
-        "port":             830,
-        "username":         os.environ["LAB_USER"],
-        "password":         os.environ["LAB_PASS"],
-        "hostkey_verify":   False,
-        # ncclient profile name — driven by inventory so each platform negotiates
-        # the correct NETCONF SSH subsystem. 'csr' for CSR1000v, 'iosxe' for
-        # ISR4200 / Catalyst 9000 / other IOS XE. Falls back to 'csr' if the
-        # field is absent for backward compatibility with older inventory entries.
-        "device_params":    {"name": device.get("ncclient_device_type", "csr")},
-        "allow_agent":      False,
-        "look_for_keys":    False,
+        "host":           device["mgmt_ip"],
+        "port":           830,
+        "username":       os.environ["LAB_USER"],
+        "password":       os.environ["LAB_PASS"],
+        "hostkey_verify": False,
+        "device_params":  {"name": device.get("ncclient_device_type", "csr")},
+        "allow_agent":    False,
+        "look_for_keys":  False,
     }
 
     results: List[Dict[str, Any]] = []
-
-    # Track which change types have produced a non-success result so that
-    # downstream changes declaring depends_on can be skipped.
-    # Keyed on type string — if finer-grained control is needed, add an 'id'
-    # leaf to the profile schema and key on that instead.
-    failed_types: set = set()
+    task_status: Dict[str, str] = {}  # id → status, per-device scoped
 
     for change in changes:
         change_type = change.get("type")
         if not change_type:
-            results.append({"status": "missing_type", "change": change})
+            result = {"status": "missing_type", "change": change}
+            results.append(result)
+            record_outcome(change, result, task_status)
             continue
 
         handler = HANDLERS.get(change_type)
         if handler is None:
-            results.append({"status": "unknown_type", "type": change_type})
-            failed_types.add(change_type)
+            result = {"status": "unknown_type", "type": change_type}
+            results.append(result)
+            record_outcome(change, result, task_status)
             continue
 
-        # ── depends_on check ─────────────────────────────────────────────────
-        depends_on = change.get("depends_on", [])
-        if isinstance(depends_on, str):
-            depends_on = [depends_on]
-        blocked_by = [dep for dep in depends_on if dep in failed_types]
-        if blocked_by:
+        # Dependency gate
+        unmet = check_dependencies(change, task_status)
+        if unmet:
             log.warning(
-                "[%s] skipping %s — blocked by failed dependency: %s",
-                device["name"], change_type, blocked_by,
+                "[%s] skipping %s (id=%s) — unmet prerequisites: %s",
+                device["name"], change_type, change.get("id"), unmet,
             )
-            results.append({
-                "status":     "skipped_depends_on",
-                "type":       change_type,
-                "blocked_by": blocked_by,
-            })
-            # Cascade: anything that depends on this change is also skipped.
-            failed_types.add(change_type)
+            result = {
+                "status": SKIPPED_STATUS,
+                "type":   change_type,
+                "id":     change.get("id"),
+                "error":  f"Prerequisite task(s) did not succeed: {unmet}",
+            }
+            results.append(result)
+            record_outcome(change, result, task_status)
             continue
 
+        # Execute
         try:
             result = handler(device_params, device["name"], change)
         except Exception as e:
             result = {
                 "status":    "handler_exception",
                 "type":      change_type,
+                "id":        change.get("id"),
                 "error":     str(e),
                 "traceback": traceback.format_exc(),
             }
 
-        # 'already_correct' is a success — idempotent no-op must not block
-        # downstream changes that depend on this type.
-        if result.get("status") not in ("success", "already_correct"):
-            failed_types.add(change_type)
-
         results.append(result)
+        record_outcome(change, result, task_status)
 
     return results
 
@@ -512,14 +515,9 @@ def reconcile_once() -> Dict[str, Any]:
             # if every change succeeded or was already correct. If any handler
             # failed, surface that; if changes were only skipped via depends_on,
             # surface that distinctly so the operator sees the cascade.
-            all_ok = all(
-                r.get("status") in ("success", "already_correct")
-                for r in results
-            )
-            any_failed = any(
-                r.get("status") not in ("success", "already_correct", "skipped_depends_on")
-                for r in results
-            )
+            all_ok = all(r.get("status") in SUCCESS_STATUSES for r in results)
+            ok_or_skipped = SUCCESS_STATUSES | {SKIPPED_STATUS}
+            any_failed = any(r.get("status") not in ok_or_skipped for r in results)
             device_report["status"] = (
                 "converged" if all_ok else
                 "converged_with_failures" if any_failed else

@@ -13,16 +13,15 @@ operation of the lab, see:
 
 ## Overview
 
-Universal dispatcher engine: each YAML change is routed to a per-domain handler that
-performs a read-compare-write-verify cycle against the device. The script itself never
-changes — only the input does. Supports complete rack deployment: interfaces, routing,
-switching, DHCP, and gateway redundancy.
+Dispatcher engine: each YAML change is routed to a per-domain handler that performs a
+read-compare-write-verify cycle against the device. The script never changes; only the
+input does. Supports complete rack deployment: interfaces, routing, switching, DHCP,
+and gateway redundancy.
 
-In production the engine is invoked by the reconciler, which renders per-device input
-from `intent/class_state.yaml` and `intent/profiles/*.yaml` against `infra/inventory.yaml`.
-The CLI path described in this document — `automate.py` reading `changes.yaml` — is the
-debug and one-shot entry point. The control surface for the lab is the GitOps loop, not
-this file.
+The reconciler invokes the engine in production. It renders per-device input from
+`intent/class_state.yaml` and `intent/profiles/*.yaml` against `infra/inventory.yaml`.
+The CLI path described in this document (`automate.py` reading `changes.yaml`) is the
+debug and one-shot entry point.
 
 Validated against real hardware: CSR1000v 16.9.5, Catalyst C9200L 17.6.3, ISR4221/K9 17.3.4a.
 
@@ -106,10 +105,9 @@ cp .env.example .env
 
 ## Configuration — Handler Input Shape
 
-The schemas below describe the input shape each handler consumes. Whether the producer is
-`changes.yaml` (CLI debug path) or a profile rendered by the reconciler against the
-inventory (production path), the handler sees the same per-change dict. Treat these
-sections as the source of truth for handler input.
+The schemas below describe the input shape each handler consumes. Whether the producer
+is `changes.yaml` (CLI debug path) or a profile rendered by the reconciler against the
+inventory (production path), the handler sees the same per-change dict.
 
 Supported change types:
 
@@ -340,9 +338,8 @@ python3 automate.py
 ```
 
 Reads `changes.yaml` from the working directory and writes `report.json` on completion.
-This invocation is for handler development and one-shot debugging — bypassing the
-reconciler is intentional here. For the production GitOps workflow (edit
-`intent/class_state.yaml`, commit, push, wait 60s), see
+This invocation is for handler development and one-shot debugging. For the production
+GitOps workflow (edit `intent/class_state.yaml`, commit, push, wait 60s), see
 [docs/operator_guide.md](../../docs/operator_guide.md).
 
 ---
@@ -361,10 +358,9 @@ reconciler is intentional here. For the production GitOps workflow (edit
    in the `verify_mismatch` branch
 6. Import and register the handler in `HANDLERS` in `automate.py` **and** in the
    separate `HANDLERS` dict in `reconciler/reconciler.py`. The two dicts have the same
-   shape (`change_type → module.handle`) but are independent copies — the CLI path
-   imports from `automate.py`, the production path from the reconciler. Adding a
-   handler to only one will make it visible from one entry point and invisible from
-   the other.
+   shape (`change_type → module.handle`) but are independent copies. The CLI path
+   imports from `automate.py`; the production path imports from the reconciler. A
+   handler registered in only one is invisible from the other entry point.
 
 That's it — no other files change.
 

@@ -225,9 +225,9 @@ network-automation-ra09/
 ```
 
 The `intent/`, `infra/`, `reconciler/`, and `scripts/` directories form the production
-deployment path — the GitOps loop running on `lab-dc-h-vm09`. The `labs/` directory holds
-the engine itself plus earlier single-domain and Day-0 work; it is the dev and historical
-area, invoked by the reconciler rather than by humans in production.
+deployment path: the GitOps loop running on `lab-dc-h-vm09`. The `labs/` directory is the
+dev and historical area, holding the engine and earlier single-domain and Day-0 work.
+The reconciler invokes it in production.
 
 ### 3.2 Lab: ra09-interface-description (Day-N, tested)
 
@@ -955,7 +955,7 @@ podman-compose up -d --no-build
 
 ### 4.1 Overview
 
-The complete solution is divided into three phases. The flexible automation engine in `network-automation` is the implementation of Phase 3 — built, hardware-validated against three platforms (see §3.5.9), and awaiting merge of `feature/flexible-automation-engine` to `main`.
+The complete solution is divided into three phases. The flexible automation engine in `network-automation` is the implementation of Phase 3: built, hardware-validated against three platforms (see §3.5.9), and awaiting merge of `feature/flexible-automation-engine` to `main`.
 
 ### 4.2 Phase 1 — Day-0: Zero Touch Provisioning
 
@@ -988,7 +988,7 @@ Device reachable via SSH / NETCONF / RESTCONF
 
 ### 4.3 Phase 2 — Inventory Management
 
-Static DHCP reservations map each device's MAC address to a fixed IP. This ensures the same IP survives every wipe and reprovision. `infra/inventory.yaml` — the catalogue the reconciler resolves device addresses against — remains stable and requires no updates after the initial setup.
+Static DHCP reservations map each device's MAC address to a fixed IP. This ensures the same IP survives every wipe and reprovision. `infra/inventory.yaml`, the catalogue the reconciler resolves device addresses against, remains stable and requires no updates after the initial setup.
 
 MACs are recorded once during physical setup and entered into the school DHCP server. The `ztp.py` script itself requires no MAC list.
 
@@ -1003,7 +1003,7 @@ The flexible engine in `labs/network-automation/` handles full desired-state pus
 - DHCP server pools and relay
 - HSRP gateway redundancy
 
-Each handler uses a different YANG model but the same read-compare-write-verify pattern. The engine has been validated against three platforms — CSR1000v 16.9.5, Catalyst C9200L 17.6.3, and ISR4221/K9 17.3.4a (see §3.5.9 for the OSPF schema work that completed validation) — and is awaiting merge of `feature/flexible-automation-engine` to `main`.
+Each handler uses a different YANG model but the same read-compare-write-verify pattern. The engine has been validated against CSR1000v 16.9.5, Catalyst C9200L 17.6.3, and ISR4221/K9 17.3.4a (see §3.5.9 for the OSPF schema work that completed validation). It is awaiting merge of `feature/flexible-automation-engine` to `main`.
 
 ### 4.5 Optional Extension — Firmware Version Enforcement
 
@@ -1048,7 +1048,7 @@ central automation controller. The reconciler runs there as a systemd service
 `intent/class_state.yaml` against `infra/inventory.yaml` and the relevant profile, and
 dispatches per-device change lists through the engine. Per-run reports land in
 `/var/lib/network-automation/reports/`, with `latest.json` as the most recent. The
-service logs to the journal — `sudo journalctl -u network-reconciler -f` follows live.
+service logs to the journal; follow live with `sudo journalctl -u network-reconciler -f`.
 No tooling beyond `reconciler/requirements.txt` is required on the controller.
 
 ---
@@ -1134,9 +1134,8 @@ Inspect `report.json`. The `total_tasks`, `success`, `already_correct`, and `fai
 
 ### 6.6 Reconciler Path (Production)
 
-The CLI invocations in §6.4 are the debug and development path. In production, the
-engine is driven by the reconciler running on `lab-dc-h-vm09` — operators do not run
-`automate.py` directly.
+Operators do not run `automate.py` directly in production. The reconciler on
+`lab-dc-h-vm09` invokes the engine; the CLI in §6.4 is for development and debugging.
 
 **Day-to-day operator loop:**
 
@@ -1156,8 +1155,8 @@ python3 scripts/manual_reconcile.py --dry-run
 ```
 
 `manual_reconcile.py` resolves `intent/class_state.yaml` and the relevant profile against
-`infra/inventory.yaml`, probes device reachability, and prints what would be done — but
-applies no changes. Useful for sanity-checking a class_state change before pushing.
+`infra/inventory.yaml`, probes device reachability, and prints what would be done without
+applying any changes. Useful for sanity-checking a class_state change before pushing.
 
 **The systemd unit:**
 

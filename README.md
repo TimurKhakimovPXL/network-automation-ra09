@@ -157,7 +157,7 @@ cp .env.example .env
 | `ztp` | Written, not yet hardware tested |
 | **Reconciler (continuous loop)** | **Live on controller (lab-dc-h-vm09); converges three platforms idempotently** |
 | **Profiles (`intent/profiles/`)** | **Seven profiles: three reusable templates plus four device-targeted profiles (csr1000v-test, isr4221-demo, isr4221-physical-test, c9200l-demo)** |
-| **Inventory (`infra/inventory.yaml`)** | **22 devices catalogued (20 rack ISR4200s plus three test devices: CSR1000v, ISR4221, C9200L). MACs still pending for the rack fleet.** |
+| **Inventory (`infra/inventory.yaml`)** | **22 devices catalogued (19 rack ISR4200s plus three test devices — CSR1000v `lab-dc-h-vm10` occupies the slot that would otherwise be LAB-RA09-C01-R01, plus ISR4221 and C9200L). MACs still pending for the rack fleet.** |
 | **OOB network** | **Designed, not yet built (see [docs/oob_network_design.md](docs/oob_network_design.md))** |
 | Ubuntu automation controller | Confirmed available on ESXi — setup with Leppens pending |
 | DHCP reservations (MAC → IP) | Generator script written, awaiting MAC collection |

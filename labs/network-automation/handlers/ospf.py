@@ -3,8 +3,11 @@ handlers/ospf.py
 
 Domain: OSPF process configuration
 YANG model: Cisco-IOS-XE-ospf (namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-ospf)
-Read:  RESTCONF GET  → native/router/ospf={process_id}
-Write: NETCONF edit-config → <router><ospf> subtree
+            augments /ios:native/ios:router with container router-ospf
+Read:  RESTCONF GET  →
+       native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={process_id}
+Write: NETCONF edit-config →
+       <router><router-ospf xmlns="…ospf"><ospf><process-id>…</process-id></ospf></router-ospf></router>
 
 Branches on Cisco-IOS-XE-ospf YANG model revision: revisions before
 2020-11-01 use <mask>, later revisions use <wildcard>. The device's

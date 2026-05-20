@@ -3,10 +3,24 @@ handlers/dhcp_server.py
 
 Domain: IOS XE DHCP server — pools, exclusions, DNS, default gateway
 YANG model: Cisco-IOS-XE-dhcp (namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp)
+            augments /ios:native/ios:ip/ios:dhcp
 Read:  RESTCONF GET  → native/ip/dhcp/pool={pool_name}
-Write: NETCONF edit-config → <ip><dhcp> subtree
+Write: NETCONF edit-config → <ip><dhcp> subtree, with augmenting nodes
+       (<excluded-address>, <pool>) carrying the Cisco-IOS-XE-dhcp namespace.
 
 YANG structure differs between IOS XE versions:
+
+  network:
+    16.x: container network { leaf number; leaf mask }
+          XML: <network><number>172.17.9.16</number><mask>255…</mask></network>
+    17.x: container network { container primary-network { leaf number; leaf mask } }
+          XML: <network><primary-network><number>…</number><mask>…</mask></primary-network></network>
+
+  excluded-address:
+    16.x: flat list excluded-address (key low-address)
+          XML: <excluded-address><low-address>X</low-address><high-address>Y</high-address></excluded-address>
+    17.x: container excluded-address { list low-high-address-list (key low-address, high-address) }
+          XML: <excluded-address><low-high-address-list><low-address>X</low-address><high-address>Y</high-address></low-high-address-list></excluded-address>
 
   default-router:
     16.x: leaf-list default-router
@@ -27,6 +41,13 @@ YANG structure differs between IOS XE versions:
           XML: <lease><lease-value><days>1</days></lease-value></lease>
 
 Version is detected from NETCONF capabilities at runtime.
+
+Verification status:
+  17.x — YANG-verified against yang/ios-xe-1731/Cisco-IOS-XE-dhcp.yang.
+         Live verification deferred: no current profile exercises this handler.
+  16.x — YANG-verified against yang/ios-xe-1681/Cisco-IOS-XE-dhcp.yang.
+         The only 16.x device in inventory (CSR1000v 16.9.5) has not had
+         this code path exercised; treat 16.x as best-effort until validated.
 
 Change schema in changes.yaml:
     - type: dhcp_server
@@ -62,6 +83,8 @@ RESTCONF_HEADERS = {
 
 RESTCONF_POOL = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/ip/dhcp/pool={pool_name}"
 RESTCONF_DHCP = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/ip/dhcp"
+
+DHCP_NS = "http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp"
 
 
 # ── Version detection ──────────────────────────────────────────────────────────
@@ -112,14 +135,21 @@ def _extract_pool(response: requests.Response, pre_17: bool) -> dict | None:
     if not pool:
         return None
 
-    network = pool.get("network", {})
+    network_container = pool.get("network", {}) or {}
 
     if pre_17:
+        # 16.x: container network { leaf number; leaf mask }
+        net_number = network_container.get("number")
+        net_mask   = network_container.get("mask")
         # 16.x: leaf-list default-router and dns-server (may be single string,
         # list, or absent — as_list handles all three uniformly)
         dns = norm.as_list(pool.get("dns-server"))
         gw  = norm.as_list(pool.get("default-router"))
     else:
+        # 17.x: container network { container primary-network { number; mask } }
+        primary = network_container.get("primary-network", {}) or {}
+        net_number = primary.get("number")
+        net_mask   = primary.get("mask")
         # 17.x: container default-router { leaf-list default-router-list }
         #        container dns-server { leaf-list dns-server-list }
         gw_container  = pool.get("default-router")
@@ -132,8 +162,8 @@ def _extract_pool(response: requests.Response, pre_17: bool) -> dict | None:
     dns_clean = [norm.normalize_ipv4(d) for d in dns if norm.normalize_ipv4(d) is not None]
 
     return {
-        "network":        norm.normalize_ipv4(network.get("number")),
-        "mask":           norm.normalize_mask(network.get("mask")),
+        "network":        norm.normalize_ipv4(net_number),
+        "mask":           norm.normalize_mask(net_mask),
         "default_router": gw_clean[0] if gw_clean else None,
         "dns_servers":    dns_clean,
     }
@@ -166,30 +196,59 @@ def _pool_matches(current: dict, desired_pool: dict) -> bool:
 
 # ── NETCONF ────────────────────────────────────────────────────────────────────
 
-def _build_excluded_xml(excluded: list[dict]) -> str:
-    lines = []
-    for ex in excluded:
-        lines.append(f"""
-          <excluded-address>
+def _build_excluded_xml(excluded: list[dict], pre_17: bool) -> str:
+    """
+    16.x: flat list at native/ip/dhcp/excluded-address (key low-address).
+    17.x: container excluded-address with list low-high-address-list
+          (key low-address, high-address). Container itself appears once
+          even with multiple ranges; list entries repeat inside it.
+    Both forms carry the Cisco-IOS-XE-dhcp namespace because the augment
+    target (native/ip/dhcp) introduces them outside the native namespace.
+    """
+    if not excluded:
+        return ""
+
+    if pre_17:
+        return "".join(
+            f"""
+          <excluded-address xmlns="{DHCP_NS}">
             <low-address>{xml.text(ex['start'])}</low-address>
             <high-address>{xml.text(ex['end'])}</high-address>
-          </excluded-address>""")
-    return "".join(lines)
+          </excluded-address>"""
+            for ex in excluded
+        )
+
+    inner = "".join(
+        f"""
+            <low-high-address-list>
+              <low-address>{xml.text(ex['start'])}</low-address>
+              <high-address>{xml.text(ex['end'])}</high-address>
+            </low-high-address-list>"""
+        for ex in excluded
+    )
+    return f"""
+          <excluded-address xmlns="{DHCP_NS}">{inner}
+          </excluded-address>"""
 
 
 def _build_pool_xml(pool: dict, pre_17: bool) -> str:
     lease = pool.get("lease_days", 1)
 
     if pre_17:
-        # 16.x: leaf-list elements, lease list with capital Days
+        # 16.x: leaf-list elements, lease list with capital Days, flat network
         gw_xml  = f"<default-router>{xml.text(pool['default_router'])}</default-router>" if pool.get("default_router") else ""
         dns_xml = "".join(
             f"<dns-server>{xml.text(dns)}</dns-server>"
             for dns in pool.get("dns_servers", [])
         )
-        lease_xml = f"<lease><Days>{xml.text(lease)}</Days></lease>"
+        lease_xml   = f"<lease><Days>{xml.text(lease)}</Days></lease>"
+        network_xml = f"""<network>
+          <number>{xml.text(pool['network'])}</number>
+          <mask>{xml.text(pool['mask'])}</mask>
+        </network>"""
     else:
-        # 17.x: container elements with inner leaf-lists, lease container/choice
+        # 17.x: container elements with inner leaf-lists, lease container/choice,
+        # network wrapped in primary-network sub-container.
         gw_xml = ""
         if pool.get("default_router"):
             gw_xml = f"""<default-router>
@@ -199,16 +258,19 @@ def _build_pool_xml(pool: dict, pre_17: bool) -> str:
             f"<dns-server-list>{xml.text(dns)}</dns-server-list>"
             for dns in pool.get("dns_servers", [])
         )
-        dns_xml   = f"<dns-server>{dns_inner}</dns-server>" if dns_inner else ""
-        lease_xml = f"<lease><lease-value><days>{xml.text(lease)}</days></lease-value></lease>"
+        dns_xml     = f"<dns-server>{dns_inner}</dns-server>" if dns_inner else ""
+        lease_xml   = f"<lease><lease-value><days>{xml.text(lease)}</days></lease-value></lease>"
+        network_xml = f"""<network>
+          <primary-network>
+            <number>{xml.text(pool['network'])}</number>
+            <mask>{xml.text(pool['mask'])}</mask>
+          </primary-network>
+        </network>"""
 
     return f"""
-      <pool>
+      <pool xmlns="{DHCP_NS}">
         <id>{xml.text(pool['name'])}</id>
-        <network>
-          <number>{xml.text(pool['network'])}</number>
-          <mask>{xml.text(pool['mask'])}</mask>
-        </network>
+        {network_xml}
         {gw_xml}
         {dns_xml}
         {lease_xml}
@@ -219,7 +281,7 @@ def _netconf_edit(device_params: dict, change: dict, pre_17: bool) -> None:
     excluded     = change.get("excluded", [])
     pools        = change.get("pools", [])
 
-    excluded_xml = _build_excluded_xml(excluded)
+    excluded_xml = _build_excluded_xml(excluded, pre_17)
     pools_xml    = "".join(_build_pool_xml(p, pre_17) for p in pools)
 
     payload = f"""
@@ -241,6 +303,37 @@ def _netconf_edit(device_params: dict, change: dict, pre_17: bool) -> None:
 
 # ── Handler ────────────────────────────────────────────────────────────────────
 
+def _validate_change(change: dict) -> str | None:
+    """
+    Return None if the change shape is acceptable; otherwise return a
+    human-readable error string. Caught before any device I/O.
+    """
+    pools = change.get("pools", [])
+    if not pools:
+        return "dhcp_server change has no 'pools' entries"
+
+    for pool in pools:
+        if not pool.get("name"):
+            return f"DHCP pool missing 'name': {pool!r}"
+        if norm.normalize_ipv4(pool.get("network")) is None:
+            return f"DHCP pool {pool.get('name')!r} has invalid 'network': {pool.get('network')!r}"
+        if norm.normalize_mask(pool.get("mask")) is None:
+            return f"DHCP pool {pool.get('name')!r} has invalid 'mask': {pool.get('mask')!r}"
+        if pool.get("default_router") is not None and norm.normalize_ipv4(pool["default_router"]) is None:
+            return f"DHCP pool {pool.get('name')!r} has invalid 'default_router': {pool['default_router']!r}"
+        for dns in pool.get("dns_servers", []) or []:
+            if norm.normalize_ipv4(dns) is None:
+                return f"DHCP pool {pool.get('name')!r} has invalid dns_server: {dns!r}"
+        if pool.get("lease_days") is not None and norm.normalize_int(pool["lease_days"]) is None:
+            return f"DHCP pool {pool.get('name')!r} has invalid 'lease_days': {pool['lease_days']!r}"
+
+    for ex in change.get("excluded", []) or []:
+        if norm.normalize_ipv4(ex.get("start")) is None or norm.normalize_ipv4(ex.get("end")) is None:
+            return f"Invalid excluded-address range: {ex!r}"
+
+    return None
+
+
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     pools = change.get("pools", [])
 
@@ -252,6 +345,12 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         "verified":      False,
         "status":        None,
     }
+
+    invalid = _validate_change(change)
+    if invalid:
+        result["status"] = "invalid_input"
+        result["error"]  = invalid
+        return result
 
     # Detect IOS XE version once — determines YANG structure for this device
     pre_17 = _is_pre_17(device_params)

@@ -344,7 +344,7 @@ The reconciler will detect drift on its first iteration after restart and conver
 └── venv/                        ← Python virtualenv
 
 /var/lib/network-automation/
-├── wipe-state.json              ← tracks which commit triggered last wipe
+├── wipe-state.json              ← per-device wipe progress for the active commit
 └── reports/
     ├── reconcile-20260428T143500Z.json  ← timestamped reports
     ├── reconcile-20260428T143600Z.json

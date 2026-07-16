@@ -2,7 +2,7 @@
 git_watcher.py — Git interaction for the reconciler.
 
 Responsibilities:
-  - Pull latest from origin/main on each loop iteration
+  - Pull latest from the current branch's configured upstream on each iteration
   - Report the current commit SHA (used by the wipe_now idempotency check)
   - Survive transient Git failures gracefully
 

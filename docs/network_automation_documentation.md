@@ -435,7 +435,7 @@ Each domain is a self-contained module in `handlers/`. Adding a new domain requi
 | `interface_ip` | IPv4 address assignment | `native/interface/{type}={name}/ip/address` |
 | `interface_switchport` | Access / trunk mode and VLANs | `native/interface/{type}={name}/switchport` |
 | `interface_state` | Shutdown / no shutdown | `native/interface/{type}={name}/shutdown` |
-| `ospf` | OSPF process, router-id, networks | `native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={process_id}` |
+| `ospf` | OSPF process, router-id, networks | Revision-selected: legacy `native/router/Cisco-IOS-XE-ospf:ospf={id}` or wrapped `native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={id}` |
 | `static_route` | IPv4 static routes | `native/ip/route` |
 | `vlan` | VLAN definitions on switches | `native/vlan/vlan-list` |
 | `etherchannel` | Port-channel and member interfaces | `native/interface/Port-channel={id}` |
@@ -1209,7 +1209,8 @@ central automation controller. The reconciler runs there as a systemd service
 dispatches per-device change lists through the engine. Per-run reports land in
 `/var/lib/network-automation/reports/`, with `latest.json` as the most recent. The
 service logs to the journal; follow live with `sudo journalctl -u network-reconciler -f`.
-No tooling beyond `reconciler/requirements.txt` is required on the controller.
+Runtime dependencies are pinned once in the root `requirements.txt`;
+`reconciler/requirements.txt` remains as a compatibility entry point.
 
 ---
 

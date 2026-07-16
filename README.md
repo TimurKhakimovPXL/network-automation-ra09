@@ -25,6 +25,8 @@ See [docs/architecture.md](docs/architecture.md) for the full discussion.
 network-automation-ra09/
 ├── README.md                              # This file
 ├── .env.example                           # Credential template — copy to .env
+├── requirements.txt                       # Unified runtime dependency pins
+├── requirements-dev.txt                   # Runtime + test tooling
 ├── dispatch.py                            # Single registration site for HANDLERS (shared by reconciler + automate.py)
 │
 ├── intent/                                # Layer 4: the control surface
@@ -265,6 +267,21 @@ root. All pass.
 
 Live verification of DHCP and EtherChannel still deferred — no current
 profile exercises either handler.
+
+### Modernization (2026-07-17)
+
+- Merged the complete flexible-engine branch into `main`; the feature branch is
+  no longer the only location containing the project.
+- Added a shared NETCONF transaction layer for writable-running and candidate
+  datastores, including validate/commit and discard-on-failure handling.
+- Added legacy flat and modern wrapped OSPF schema support based on the
+  advertised `Cisco-IOS-XE-ospf` revision.
+- Changed maintenance wipe state from one global completed SHA to per-device
+  progress, so unreachable and failed devices are retried.
+- Unified runtime dependencies, added GitHub Actions CI, and expanded the suite
+  to 46 pure tests.
+- Added `--changes` and `--report` to the CLI debug runner so local device work
+  does not require modifying tracked examples.
 
 ### Architecture Refactor (2026-04-28)
 Major architectural shift from one-shot scripts to continuous reconciliation. Same engine (handlers unchanged), new control plane on top.

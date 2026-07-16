@@ -25,6 +25,7 @@ against the real intent stack, use scripts/manual_reconcile.py --dry-run.
 Credentials are loaded from .env — never put them in changes.yaml.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -145,7 +146,7 @@ def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
 
 # ── Report ─────────────────────────────────────────────────────────────────────
 
-def write_report(results: list[dict]) -> None:
+def write_report(results: list[dict], report_file: str = REPORT_FILE) -> None:
     success = sum(1 for r in results if r.get("status") == "success")
     already = sum(1 for r in results if r.get("status") == "already_correct")
     ok_or_skipped = SUCCESS_STATUSES | {SKIPPED_STATUS}
@@ -162,10 +163,10 @@ def write_report(results: list[dict]) -> None:
         "results":         results,
     }
 
-    with open(REPORT_FILE, "w") as f:
+    with open(report_file, "w") as f:
         json.dump(report, f, indent=2)
 
-    log(f"Report written to {REPORT_FILE} "
+    log(f"Report written to {report_file} "
         f"({success} success, {already} already_correct, "
         f"{skipped} skipped, {failed} failed)")
 
@@ -173,6 +174,17 @@ def write_report(results: list[dict]) -> None:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the single-device automation engine")
+    parser.add_argument(
+        "--changes", default=CHANGES_FILE,
+        help=f"Desired-state YAML file (default: {CHANGES_FILE})",
+    )
+    parser.add_argument(
+        "--report", default=REPORT_FILE,
+        help=f"JSON report destination (default: {REPORT_FILE})",
+    )
+    args = parser.parse_args()
+
     load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
     username = os.getenv("LAB_USER")
@@ -182,11 +194,11 @@ def main() -> None:
         print("[ERROR] LAB_USER and LAB_PASS must be set in .env")
         sys.exit(1)
 
-    if not os.path.exists(CHANGES_FILE):
-        print(f"[ERROR] {CHANGES_FILE} not found in working directory")
+    if not os.path.exists(args.changes):
+        print(f"[ERROR] {args.changes} not found")
         sys.exit(1)
 
-    data    = load_changes(CHANGES_FILE)
+    data    = load_changes(args.changes)
     devices = data.get("devices", [])
 
     if not devices:
@@ -236,7 +248,7 @@ def main() -> None:
             else:
                 log(f"  [FAIL] {result.get('type')} — {status}: {result.get('error', '')}")
 
-    write_report(all_results)
+    write_report(all_results, args.report)
 
 
 if __name__ == "__main__":

@@ -174,22 +174,41 @@ def probe_has_config(device: Dict[str, Any]) -> bool:
 
 
 def load_wipe_state() -> Dict[str, Any]:
-    """Returns {'last_completed_sha': str | None, 'last_completed_at': iso8601 | None}"""
+    """Return per-device progress for the current maintenance-wipe commit.
+
+    Older state files tracked only a single completed SHA. They are treated as
+    having no completed devices so a controller upgrade cannot silently skip
+    devices that previously failed or were unreachable.
+    """
+    empty = {"commit_sha": None, "completed_devices": [], "updated_at": None}
     if not WIPE_STATE_FILE.exists():
-        return {"last_completed_sha": None, "last_completed_at": None}
+        return empty
     try:
         with WIPE_STATE_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (OSError, json.JSONDecodeError):
         log.warning("wipe-state.json unreadable, treating as empty")
-        return {"last_completed_sha": None, "last_completed_at": None}
+        return empty
+
+    if not isinstance(data, dict) or "commit_sha" not in data:
+        log.warning("legacy wipe state detected; retrying with per-device tracking")
+        return empty
+    completed = data.get("completed_devices") or []
+    if not isinstance(completed, list):
+        return empty
+    return {
+        "commit_sha": data.get("commit_sha"),
+        "completed_devices": [str(name) for name in completed],
+        "updated_at": data.get("updated_at"),
+    }
 
 
-def save_wipe_state(commit_sha: str) -> None:
+def save_wipe_state(commit_sha: str, completed_devices: set[str]) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     payload = {
-        "last_completed_sha": commit_sha,
-        "last_completed_at":  datetime.now(timezone.utc).isoformat(),
+        "commit_sha": commit_sha,
+        "completed_devices": sorted(completed_devices),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     with WIPE_STATE_FILE.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
@@ -281,9 +300,8 @@ def perform_wipe(devices: List[Dict[str, Any]]) -> Dict[str, Any]:
     On reload the device comes up with a factory-default running config,
     ready for Day-0 re-provisioning by the reconciler's next iteration.
 
-    save_wipe_state is only called by the caller (reconcile_once) if
-    summary['wiped'] > 0. If all devices were unreachable the SHA is NOT
-    persisted, so the reconciler retries the wipe on the next iteration.
+    The caller records the names of successful devices. Failed and unreachable
+    devices remain absent from state and are retried on the next iteration.
     """
     username = os.environ.get("LAB_USER", "")
     password = os.environ.get("LAB_PASS", "")
@@ -491,6 +509,14 @@ def reconcile_once() -> Dict[str, Any]:
             continue
 
         if not target_changes:
+            if wipe_directive:
+                # The explicit maintenance wipe below owns this device for the
+                # current iteration. Avoid wiping a blank-mode device twice and
+                # keep maintenance progress isolated from blank convergence.
+                device_report["status"] = "pending_maintenance_wipe"
+                report["devices"][device_name] = device_report
+                continue
+
             # Bug 4 fix — blank mode must actively converge, not passively skip.
             # Probe the device; if managed config is present, wipe it.
             if probe_has_config(device):
@@ -501,8 +527,6 @@ def reconcile_once() -> Dict[str, Any]:
                 wipe_result = perform_wipe([device])
                 device_report["status"]      = "wiped_for_blank_convergence"
                 device_report["wipe_result"] = wipe_result
-                if wipe_result["wiped"] > 0:
-                    save_wipe_state(report["git"]["head_sha"])
             else:
                 device_report["status"] = "blank_confirmed"
                 log.debug("%s blank confirmed — no managed config found", device_name)
@@ -535,25 +559,37 @@ def reconcile_once() -> Dict[str, Any]:
     if wipe_directive and report["git"]["head_sha"]:
         wipe_state  = load_wipe_state()
         current_sha = report["git"]["head_sha"]
-        if wipe_state["last_completed_sha"] != current_sha:
-            log.info("wipe_now=true and SHA differs from last completed wipe — performing wipe")
-            # Observe-mode devices are excluded from blanket wipes: the whole
-            # point of observe is that the engine never writes to them.
-            wipe_targets = [
-                d for d in inventory
-                if target_state.get(d["name"]) is not None
-            ]
+        completed = (
+            set(wipe_state["completed_devices"])
+            if wipe_state["commit_sha"] == current_sha
+            else set()
+        )
+        eligible = [
+            d for d in inventory
+            if target_state.get(d["name"]) is not None
+        ]
+        wipe_targets = [d for d in eligible if d["name"] not in completed]
+
+        if wipe_targets:
+            log.info(
+                "wipe_now=true — wiping %d remaining device(s), %d already complete",
+                len(wipe_targets), len(completed),
+            )
             wipe_summary = perform_wipe(wipe_targets)
+            wipe_summary["already_completed"] = sorted(completed)
             report["wipe"] = wipe_summary
-            # Bug 2 fix — only persist the SHA if at least one device was
-            # actually wiped. If all devices were unreachable the SHA is NOT
-            # saved, so the wipe is retried on the next loop iteration rather
-            # than being silently declared complete when nothing was touched.
-            if wipe_summary["wiped"] > 0:
-                save_wipe_state(current_sha)
+            newly_completed = {
+                item["device"]
+                for item in wipe_summary["details"]
+                if item["status"] == "wiped"
+            }
+            if newly_completed:
+                completed.update(newly_completed)
+                save_wipe_state(current_sha, completed)
                 log.info(
-                    "wipe complete: %d wiped, %d unreachable, %d failed",
-                    wipe_summary["wiped"], wipe_summary["unreachable"], wipe_summary["failed"],
+                    "wipe progress: %d/%d complete, %d unreachable, %d failed",
+                    len(completed), len(eligible),
+                    wipe_summary["unreachable"], wipe_summary["failed"],
                 )
             else:
                 log.warning(
@@ -562,8 +598,12 @@ def reconcile_once() -> Dict[str, Any]:
                     wipe_summary["unreachable"], wipe_summary["failed"],
                 )
         else:
-            log.debug("wipe_now=true but already acted on this commit; skipping")
-            report["wipe"] = {"skipped": True, "reason": "already_acted_on_this_commit"}
+            log.debug("wipe_now=true but every eligible device is complete for this commit")
+            report["wipe"] = {
+                "skipped": True,
+                "reason": "all_eligible_devices_completed_for_commit",
+                "completed_devices": sorted(completed),
+            }
 
     report["iteration_end"] = datetime.now(timezone.utc).isoformat()
     return report

@@ -2,16 +2,15 @@
 handlers/ospf.py
 
 Domain: OSPF process configuration
-YANG model: Cisco-IOS-XE-ospf (namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-ospf)
-            augments /ios:native/ios:router with container router-ospf
-Read:  RESTCONF GET  →
-       native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={process_id}
-Write: NETCONF edit-config →
-       <router><router-ospf xmlns="…ospf"><ospf><process-id>…</process-id></ospf></router-ospf></router>
+YANG model: Cisco-IOS-XE-ospf
 
-Branches on Cisco-IOS-XE-ospf YANG model revision: revisions before
-2020-11-01 use <mask>, later revisions use <wildcard>. The device's
-IOS XE release number is NOT a reliable proxy; see _get_ospf_model_revision.
+Two field-observed schema families are supported:
+  legacy flat (2018-era): native/router/ospf={id}, network key <mask>
+  wrapped (2020-era):     native/router/router-ospf/ospf/process-id={id},
+                          network key <wildcard>
+
+The advertised YANG revision selects the schema. IOS XE release numbers are
+not a reliable proxy for the model installed on a device.
 
 Change schema in changes.yaml:
     - type: ospf
@@ -30,6 +29,7 @@ from ncclient import manager
 
 from . import _normalize as norm
 from . import _debug
+from . import _netconf
 from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -39,10 +39,18 @@ RESTCONF_HEADERS = {
     "Content-Type": "application/yang-data+json",
 }
 
-RESTCONF_BASE = (
+RESTCONF_WRAPPED = (
     "https://{host}/restconf/data/Cisco-IOS-XE-native:native/router/"
     "Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={process_id}"
 )
+RESTCONF_LEGACY = (
+    "https://{host}/restconf/data/Cisco-IOS-XE-native:native/router/"
+    "Cisco-IOS-XE-ospf:ospf={process_id}"
+)
+
+LEGACY_SCHEMA = "legacy_flat"
+WRAPPED_SCHEMA = "wrapped"
+WRAPPED_SCHEMA_MIN_REVISION = "2020-07-01"
 
 
 # ── Version detection ──────────────────────────────────────────────────────────
@@ -59,10 +67,9 @@ def _get_ospf_model_revision(device_params: dict) -> str:
     mid-2020 (mask) model revision, contradicting the assumption that
     17.x always uses <wildcard>.
 
-    Returns '2020-11-01' as a safe default if the capability is not
-    found; that date is at-or-after the mask→wildcard transition, so
-    the handler will default to the modern <wildcard> element when
-    detection fails.
+    Returns the first wrapped-schema revision as a conservative modern default
+    if capabilities cannot be queried. This preserves the behaviour used by
+    previously validated IOS XE 17.x devices.
     """
     try:
         with manager.connect(**device_params) as m:
@@ -75,41 +82,29 @@ def _get_ospf_model_revision(device_params: dict) -> str:
                     return match.group(1)
     except Exception:
         pass
-    return "2020-11-01"
+    return WRAPPED_SCHEMA_MIN_REVISION
 
 
-def _uses_mask_element(device_params: dict) -> bool:
-    """
-    Return True if the device's Cisco-IOS-XE-ospf YANG model uses <mask>
-    for the network list key.
-
-    Field-observed evidence on LAB-R11-C01-R01 (IOS XE 17.3.4a, model
-    revision 2020-07-01): the wrapped router-ospf/ospf/process-id schema
-    uses <wildcard>, not <mask>. Earlier diagnosis suggesting a
-    2020-11-01 cutoff was based on a different device's behaviour against
-    the flat (legacy, non-augmenting) schema — where the device's CLI
-    translation layer expected <mask>. That path is no longer reachable
-    now that the handler uses the augmented container.
-
-    Every IOS XE device we currently target advertises the augmenting
-    Cisco-IOS-XE-ospf module, and every revision of that module uses
-    <wildcard>. The <mask> branch is therefore unreachable in practice.
-    Keep _get_ospf_model_revision and this function in place as
-    seatbelts — if we ever encounter an older model variant that
-    genuinely needs <mask>, flip the return based on the revision
-    string. For now: always wildcard.
-    """
-    return False
+def _schema_for_revision(revision: str) -> str:
+    """Map an advertised ISO revision date to its OSPF schema family."""
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", revision or ""):
+        return LEGACY_SCHEMA if revision < WRAPPED_SCHEMA_MIN_REVISION else WRAPPED_SCHEMA
+    return WRAPPED_SCHEMA
 
 
 # ── RESTCONF ───────────────────────────────────────────────────────────────────
 
-def _restconf_get(device_params: dict, process_id: int) -> requests.Response:
+def _restconf_url(host: str, process_id: int, schema: str) -> str:
+    template = RESTCONF_LEGACY if schema == LEGACY_SCHEMA else RESTCONF_WRAPPED
+    return template.format(host=host, process_id=process_id)
+
+
+def _restconf_get(device_params: dict, process_id: int, schema: str) -> requests.Response:
     host     = device_params["host"]
     username = device_params["username"]
     password = device_params["password"]
 
-    url = RESTCONF_BASE.format(host=host, process_id=process_id)
+    url = _restconf_url(host, process_id, schema)
 
     return requests.get(
         url,
@@ -120,22 +115,25 @@ def _restconf_get(device_params: dict, process_id: int) -> requests.Response:
     )
 
 
-def _extract_ospf_state(response: requests.Response, uses_mask: bool) -> dict | None:
+def _extract_ospf_state(response: requests.Response, schema: str) -> dict | None:
     """
     Parse the RESTCONF response for a single OSPF process.
 
-    Path is .../router-ospf/ospf/process-id={id}, so the top-level JSON key
-    is module-qualified to the augmenting module: 'Cisco-IOS-XE-ospf:process-id'.
-    Per RFC 8040 a keyed list GET returns the entry as a single-element list;
-    as_list handles dict vs list shape defensively.
+    Keyed-list GET responses may contain either a mapping or a one-element
+    list. The top-level key differs between the legacy and wrapped schemas.
     """
     data    = response.json()
-    entries = norm.as_list(data.get("Cisco-IOS-XE-ospf:process-id"))
+    response_key = (
+        "Cisco-IOS-XE-ospf:ospf"
+        if schema == LEGACY_SCHEMA
+        else "Cisco-IOS-XE-ospf:process-id"
+    )
+    entries = norm.as_list(data.get(response_key))
     if not entries:
         return None
     entry = entries[0]
 
-    wildcard_key = "mask" if uses_mask else "wildcard"
+    wildcard_key = "mask" if schema == LEGACY_SCHEMA else "wildcard"
     networks = [
         {
             "prefix":   norm.normalize_ipv4(n.get("ip")),
@@ -176,12 +174,12 @@ def _states_match(current: dict, desired: dict) -> bool:
 
 # ── NETCONF ────────────────────────────────────────────────────────────────────
 
-def _build_network_xml(networks: list[dict], uses_mask: bool) -> str:
+def _build_network_xml(networks: list[dict], schema: str) -> str:
     """
-    Older YANG revision (<2020-11-01): <mask> element (YANG key "ip mask")
-    Newer YANG revision:               <wildcard> element (YANG key "ip wildcard")
+    The legacy flat schema names its wildcard-valued key ``mask``; the wrapped
+    schema names it ``wildcard``.
     """
-    wildcard_elem = "mask" if uses_mask else "wildcard"
+    wildcard_elem = "mask" if schema == LEGACY_SCHEMA else "wildcard"
     lines = []
     for n in networks:
         lines.append(f"""
@@ -193,31 +191,23 @@ def _build_network_xml(networks: list[dict], uses_mask: bool) -> str:
     return "".join(lines)
 
 
-def _netconf_edit(device_params: dict, change: dict, uses_mask: bool) -> None:
-    """
-    Wrapped OSPF schema (Cisco-IOS-XE-ospf revision 2020-07-01 onward, both
-    'mask' and 'wildcard' variants).
-
-    Layout:
-      native/router
-        Cisco-IOS-XE-ospf:router-ospf
-          ospf                  (container)
-            process-id          (list, keyed on <id>)
-              id
-              router-id
-              network*
-    """
+def _build_config(change: dict, schema: str) -> str:
     process_id = change["process_id"]
     router_id  = change.get("router_id", "")
     networks   = change.get("networks", [])
 
-    network_xml   = _build_network_xml(networks, uses_mask)
+    network_xml   = _build_network_xml(networks, schema)
     router_id_xml = f"<router-id>{xml.text(router_id)}</router-id>" if router_id else ""
 
-    payload = f"""
-    <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
-      <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
-        <router>
+    if schema == LEGACY_SCHEMA:
+        ospf_xml = f"""
+          <ospf xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ospf">
+            <id>{xml.text(process_id)}</id>
+            {router_id_xml}
+            {network_xml}
+          </ospf>"""
+    else:
+        ospf_xml = f"""
           <router-ospf xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ospf">
             <ospf>
               <process-id>
@@ -226,14 +216,21 @@ def _netconf_edit(device_params: dict, change: dict, uses_mask: bool) -> None:
                 {network_xml}
               </process-id>
             </ospf>
-          </router-ospf>
+          </router-ospf>"""
+
+    return f"""
+    <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
+      <native xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-native">
+        <router>
+          {ospf_xml}
         </router>
       </native>
     </config>
     """
 
-    with manager.connect(**device_params) as m:
-        m.edit_config(target="running", config=payload)
+
+def _netconf_edit(device_params: dict, change: dict, schema: str) -> None:
+    _netconf.edit_config(device_params, _build_config(change, schema))
 
 
 # ── Handler ────────────────────────────────────────────────────────────────────
@@ -250,17 +247,14 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         "status":      None,
     }
 
-    # Detect YANG model revision once — recorded in the report for audit.
-    # The wrapped router-ospf schema always uses <wildcard>; see
-    # _uses_mask_element for the seatbelt that would flip this if a
-    # genuinely <mask>-only model variant ever surfaced.
     ospf_model_revision = _get_ospf_model_revision(device_params)
-    uses_mask = False
+    schema = _schema_for_revision(ospf_model_revision)
     result["ospf_model_revision"] = ospf_model_revision
+    result["ospf_schema"] = schema
 
     # 1. Read
     try:
-        response = _restconf_get(device_params, process_id)
+        response = _restconf_get(device_params, process_id, schema)
     except Exception as e:
         result["status"] = "read_failed"
         result["error"]  = str(e)
@@ -271,7 +265,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         current = None
     elif response.ok:
         try:
-            current = _extract_ospf_state(response, uses_mask)
+            current = _extract_ospf_state(response, schema)
         except Exception as e:
             result["status"] = "read_failed"
             result["error"]  = f"Failed to parse RESTCONF response: {e}"
@@ -290,7 +284,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     # 3. Write
     try:
-        _netconf_edit(device_params, change, uses_mask)
+        _netconf_edit(device_params, change, schema)
         result["changed"] = True
     except Exception as e:
         result["status"] = "edit_failed"
@@ -299,13 +293,13 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     # 4. Verify
     try:
-        verify_response = _restconf_get(device_params, process_id)
+        verify_response = _restconf_get(device_params, process_id, schema)
         if not verify_response.ok:
             result["status"] = "verify_failed"
             result["error"]  = f"Verify HTTP {verify_response.status_code}"
             return result
 
-        verified = _extract_ospf_state(verify_response, uses_mask)
+        verified = _extract_ospf_state(verify_response, schema)
 
         if _states_match(verified, desired):
             result["status"]   = "success"

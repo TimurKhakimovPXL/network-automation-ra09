@@ -119,7 +119,7 @@ Three modes are supported: `blank` (actively converge the device to empty by wip
 The reconciler runs continuously. Each iteration executes the following:
 
 ```
-1. PULL    — git pull origin main
+1. PULL    — git pull --ff-only from the branch's configured upstream
 2. PARSE   — load intent/class_state.yaml + infra/inventory.yaml + selected profile
 3. RESOLVE — render profile against inventory → per-device target state
 4. OBSERVE — for each device, probe reachability; if reachable, read current state via RESTCONF
@@ -127,9 +127,9 @@ The reconciler runs continuously. Each iteration executes the following:
 6. CONVERGE— for each device with a non-empty delta:
                 if reachable: invoke automate.apply(device, delta)
                 if unreachable: log "pending" and skip
-7. WIPE    — if maintenance.wipe_now is true and not yet acted on (timestamp check):
-                wipe all reachable devices via NETCONF "write erase"
-                record completion timestamp in /var/lib/network-automation/wipe-state.json
+7. WIPE    — if maintenance.wipe_now is true:
+                wipe each not-yet-completed reachable device via SSH
+                retain per-device progress and retry failures/unreachable devices
 8. REPORT  — write report.json to /var/lib/network-automation/reports/
 9. SLEEP   — wait 60 seconds, then loop
 ```
@@ -148,17 +148,18 @@ Loud failure on validation errors is the policy. The reconciler does not attempt
 
 ### 4.2 The `wipe_now` Mechanism
 
-Setting `maintenance.wipe_now: true` and committing triggers a one-shot wipe. To prevent re-wiping on every loop iteration, the reconciler stores the commit SHA of the last completed wipe in `/var/lib/network-automation/wipe-state.json`. On each iteration:
+Setting `maintenance.wipe_now: true` and committing triggers a one-shot wipe. The reconciler stores the commit SHA plus the names of devices successfully wiped in `/var/lib/network-automation/wipe-state.json`. On each iteration:
 
 ```
-if wipe_now is true AND current_commit_sha != last_completed_wipe_sha:
-    perform wipe
-    record current_commit_sha as last_completed_wipe_sha
-else:
-    skip — already acted on this commit's wipe directive
+if wipe_now is true:
+    eligible = all non-observe devices
+    remaining = eligible - devices_completed_for_current_sha
+    wipe remaining reachable devices
+    record each successful device
+    retry failed or unreachable devices next iteration
 ```
 
-The supervisor manually sets `wipe_now: false` on the next commit to keep the file clean. The mechanism is idempotent — leaving `wipe_now: true` permanently does nothing after the first action. This avoids the controller needing Git write access.
+The supervisor manually sets `wipe_now: false` on the next commit to keep the file clean. Once every eligible device is recorded, leaving `wipe_now: true` does nothing for that commit. A new commit creates a new wipe identity. This avoids both repeated successful wipes and the old failure mode where one successful device caused all unreachable devices to be skipped permanently.
 
 ---
 

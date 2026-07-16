@@ -109,6 +109,10 @@ cp .env.example .env
 # edit .env with your credentials
 ```
 
+That compatibility requirements file delegates to the single pinned runtime
+set at the repository root. For development and tests, install
+`requirements-dev.txt` from the repository root instead.
+
 ---
 
 ## Configuration — Handler Input Shape
@@ -472,11 +476,22 @@ already_correct. Idempotent.
 | `handlers/etherchannel.py` | Verification only checked Port-channel description, not whether member interfaces actually received the channel-group config | New `_verify_members()` RESTCONF-GETs each member and verifies channel-group number, mode, and channel-protocol when set. `verify_mismatch` now returns per-member diagnostics |
 | `handlers/ospf.py` | Docstring claimed `Read: native/router/ospf={id}`, but code uses the augmented `native/router/Cisco-IOS-XE-ospf:router-ospf/ospf/process-id={id}` (since §3.5.9) | Docstring updated. No code change |
 
-Validation: all 31 tests in `tests/` pass against the new payload
+Historical validation: all 31 tests in `tests/` passed against the new payload
 shapes (run `python -m pytest tests/ -v` from the repo root). Live
 verification of DHCP and EtherChannel deferred — no current profile
 exercises either handler. The first profile that turns either one on
 is where any remaining vendor-specific quirks will surface.
+
+### Current transaction and OSPF support (2026-07-17)
+
+All configuration handlers now use a shared NETCONF transaction layer. It
+selects writable-running or candidate from server capabilities; candidate mode
+locks, validates when supported, commits, discards on failure, and always
+unlocks. The OSPF handler selects both the RESTCONF path and NETCONF payload
+shape from the advertised model revision: legacy 2018-era flat `router/ospf`
+with `<mask>`, or 2020-era wrapped `router-ospf/.../process-id` with
+`<wildcard>`. The suite contains 46 pure tests, including both OSPF schemas,
+transaction cleanup, and per-device wipe retries.
 
 ---
 

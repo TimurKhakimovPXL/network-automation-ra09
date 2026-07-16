@@ -21,10 +21,9 @@ Change schema in changes.yaml:
 import urllib.parse
 import urllib3
 import requests
-from ncclient import manager
-
 from . import _normalize as norm
 from . import _debug
+from . import _netconf
 from . import _xml as xml
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -121,8 +120,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
     </config>
     """
 
-    with manager.connect(**device_params) as m:
-        m.edit_config(target="running", config=payload)
+    _netconf.edit_config(device_params, payload)
 
 
 # ── Handler ────────────────────────────────────────────────────────────────────

@@ -3,3 +3,8 @@ __pycache__/
 *.save
 venv/
 .env
+
+# Local single-device runs (use automate.py --changes/--report)
+labs/network-automation/changes.local.yaml
+labs/network-automation/report.json
+labs/network-automation/debug_runs/

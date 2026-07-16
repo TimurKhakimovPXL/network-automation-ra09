@@ -1,0 +1,20 @@
+session:
+  name: test
+  pre_class:
+    mode: blank
+    profile: null
+
+overrides:
+  devices:
+    lab-dc-h-vm10:
+      mode: preconfigured
+      profile: csr1000v-test
+    lab-dc-h-sw01:
+      mode: preconfigured
+      profile: c9200l-demo
+    LAB-R11-C01-R01:
+      mode: preconfigured
+      profile: isr4221-physical-test
+
+maintenance:
+  wipe_now: false

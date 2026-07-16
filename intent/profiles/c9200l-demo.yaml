@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────────
+# c9200l-demo — minimal C9200L convergence target.
+# ─────────────────────────────────────────────────────────────────────
+#
+# Purpose: prove the engine drives the C9200L (lab-dc-h-sw01) end-to-end
+# via the GitOps loop, same code path as the ISR4221, on a different
+# platform and a different YANG schema family.
+#
+# Target: lab-dc-h-sw01 (Catalyst C9200L-24T-4G, S/N FOC26425LPE,
+#         IOS XE 17.6.3, 172.19.11.5).
+#
+# ── Handler exercised ────────────────────────────────────────────────
+#   - interface_description (flat schema, well-tested handler)
+#
+# ── Safety analysis ──────────────────────────────────────────────────
+# Why this is safe:
+#
+#   Gi1/0/24 — UNUSED PORT, VERIFIED.
+#     RESTCONF probe on 2026-05-18 confirmed the interface exists with
+#     only its name leaf present. No description, no switchport mode,
+#     no VLAN assignment, no shutdown state set explicitly. The port is
+#     conventionally the last patch position on a 24-port C9200L and is
+#     not connected to anything in the lab patch panel.
+#
+#   description-only change.
+#     interface_description is the flat-schema handler that has
+#     converged successfully against the CSR1000v for weeks. No
+#     structural list elements, no augmenting-module risk. The handler
+#     reads via RESTCONF, writes via NETCONF edit-config, verifies via
+#     a second RESTCONF read — same read-compare-write-verify cycle as
+#     every other handler.
+#
+# ── Reversibility ────────────────────────────────────────────────────
+# To revert: change the override in class_state.yaml back to
+# `mode: observe`. The description stays on the device (additive
+# semantics — the engine doesn't remove declarations that disappear
+# from intent) but has no operational impact on an unused port. For a
+# hard cleanup, edit the description out of the description leaf via
+# RESTCONF directly, or set the port to administratively down via the
+# CLI.
+#
+# ── Context ──────────────────────────────────────────────────────────
+# This profile is the maturity step that moves the C9200L out of
+# observe-only mode. Observe mode was the architectural fix shipped
+# after the 2026-05-12 wipe incident. The switch stayed observe-only
+# while the engine was being hardened — OSPF schema work, per-device
+# overrides, accurate status (see §3.5.9 of
+# docs/network_automation_documentation.md for the OSPF round).
+# Now that the engine converges idempotently on real hardware,
+# one minimal preconfigured task is the appropriate next step. The
+# transition is per-device and incremental — nothing else changes.
+# ─────────────────────────────────────────────────────────────────────
+
+description: "C9200L demo — one description on Gi1/0/24, zero operational impact"
+
+per_device_changes:
+  - id: gi1-0-24-description
+    type: interface_description
+    interface_type: GigabitEthernet
+    interface_name: "1/0/24"
+    description: "Managed by network-automation-ra09 — demo port, no client connected"

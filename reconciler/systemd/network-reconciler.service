@@ -1,0 +1,38 @@
+[Unit]
+Description=Network Lab Reconciler (GitOps continuous loop)
+Documentation=file:///opt/network-automation-ra09/docs/architecture.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=netauto
+Group=netauto
+WorkingDirectory=/opt/network-automation-ra09
+EnvironmentFile=/opt/network-automation-ra09/.env
+ExecStart=/opt/network-automation-ra09/venv/bin/python -m reconciler.reconciler
+
+# Restart policy — survive transient failures
+Restart=always
+RestartSec=10
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# Logging — go to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=network-reconciler
+
+# Resource limits — defensive, this should be lightweight
+MemoryMax=512M
+CPUQuota=50%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/network-automation /var/log/network-automation /opt/network-automation-ra09
+
+[Install]
+WantedBy=multi-user.target

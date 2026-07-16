@@ -1,0 +1,47 @@
+# dhcp_reservations.yaml — MAC → IP bindings for the OOB management network.
+#
+# This file is the authoritative declaration of DHCP reservations. The DHCP
+# server itself is downstream — its config is rendered from this file via
+# scripts/apply_dhcp_reservations.py.
+#
+# Same source-of-truth principle as everything else: edit this file, run the
+# render script, the DHCP server gets updated. Never edit DHCP server config
+# directly; if you do, the next render will overwrite your changes.
+#
+# This file is largely redundant with infra/inventory.yaml — both contain
+# (mac, mgmt_ip) tuples per device. Kept separate because:
+#   - inventory describes WHAT EXISTS (hardware)
+#   - this file describes WHAT THE DHCP SERVER SHOULD HAND OUT (network policy)
+# In practice, the render script reads BOTH and ensures they agree. Drift
+# between them is an error condition the script will refuse to render.
+
+scope:
+  name: "OOB-Management"
+  subnet: "172.17.0.0/16"          # provisional — see docs/oob_network_design.md §4
+  lease_duration_hours: 24
+  options:
+    router: "TODO"                  # default gateway for OOB subnet
+    dns_servers: ["10.199.64.66"]
+    ntp_servers: ["10.199.64.66"]
+    boot_server_ip: "10.199.64.134" # TFTP server (option 66)
+    bootfile_name: "/ztp.py"        # ZTP fetch path (option 67)
+
+# Reservations are generated from inventory — do not edit the entries below
+# manually. Run scripts/apply_dhcp_reservations.py to regenerate after changing
+# inventory.yaml. The script verifies inventory matches before writing.
+#
+# Format below is the source format the renderer reads. The renderer outputs
+# PowerShell that the supervisor runs on the Windows DHCP server.
+
+reservations:
+  # Auto-generated from inventory.yaml — DO NOT EDIT MANUALLY
+  # (Once MACs are collected, the render script will populate this section.)
+
+  # Example structure once populated:
+  #
+  # - name: LAB-RA09-C01-R01
+  #   mac: "AA-BB-CC-00-09-02"
+  #   ip: 172.17.9.2
+  # - name: LAB-RA09-C02-R01
+  #   mac: "AA-BB-CC-00-09-66"
+  #   ip: 172.17.9.66

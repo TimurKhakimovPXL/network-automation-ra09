@@ -422,8 +422,52 @@ def save_wipe_state(commit_sha: str, completed_devices: set[str]) -> None:
         json.dump(payload, f, indent=2)
 
 
-def _wipe_device_ssh(device: Dict[str, Any], username: str, password: str) -> str:
-    """Erase one device and schedule a reload, returning a status string.
+def _should_retry_legacy_ssh(exc: BaseException) -> bool:
+    """Return whether a Paramiko error identifies RSA algorithm negotiation."""
+    try:
+        import paramiko
+    except ImportError:
+        return False
+
+    if not isinstance(
+        exc,
+        (paramiko.ssh_exception.AuthenticationException,
+         paramiko.ssh_exception.SSHException),
+    ):
+        return False
+
+    messages = []
+    current: Optional[BaseException] = exc
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        messages.append(str(current).lower())
+        current = current.__cause__ or current.__context__
+
+    text = " ".join(messages)
+    markers = (
+        "ssh-rsa",
+        "rsa-sha2-256",
+        "rsa-sha2-512",
+        "pubkey algorithm",
+        "public key algorithm",
+        "signature algorithm",
+    )
+    return any(marker in text for marker in markers)
+
+
+def _new_ssh_client(paramiko_module):
+    client = paramiko_module.SSHClient()
+    client.set_missing_host_key_policy(paramiko_module.AutoAddPolicy())
+    return client
+
+
+def _wipe_device_ssh(
+    device: Dict[str, Any],
+    username: str,
+    password: str,
+) -> tuple[str, Optional[str]]:
+    """Erase one device and return the result plus SSH compatibility mode.
 
     An interactive Paramiko channel is used because both commands may prompt
     for confirmation. Scheduling the reload one minute ahead lets the SSH
@@ -433,20 +477,50 @@ def _wipe_device_ssh(device: Dict[str, Any], username: str, password: str) -> st
     try:
         import paramiko
     except ImportError:
-        return "error: paramiko not installed: run: pip install paramiko"
+        return "error: paramiko not installed: run: pip install paramiko", None
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client = _new_ssh_client(paramiko)
+    ssh_compat: Optional[str] = None
+    connect_args = {
+        "hostname": device["mgmt_ip"],
+        "port": 22,
+        "username": username,
+        "password": password,
+        "timeout": 15,
+        "look_for_keys": False,
+        "allow_agent": False,
+    }
     try:
-        client.connect(
-            device["mgmt_ip"],
-            port=22,
-            username=username,
-            password=password,
-            timeout=15,
-            look_for_keys=False,
-            allow_agent=False,
-        )
+        try:
+            client.connect(**connect_args)
+            ssh_compat = "modern"
+        except Exception as exc:
+            if not _should_retry_legacy_ssh(exc):
+                raise
+
+            try:
+                client.close()
+            finally:
+                client = _new_ssh_client(paramiko)
+
+            # IOS XE 16.8 devices in this fleet may offer only ssh-rsa user-key
+            # signatures and diffie-hellman-group14-sha1 KEX. Paramiko 3.4 can
+            # still negotiate the KEX, but prefers RSA-SHA2 signatures. Retry
+            # once without those pubkey algorithms when negotiation reports
+            # that specific mismatch.
+            log.warning(
+                "wipe: %s retrying SSH with legacy ssh-rsa compatibility",
+                device["name"],
+            )
+            client.connect(
+                **connect_args,
+                disabled_algorithms={
+                    "pubkeys": ["rsa-sha2-256", "rsa-sha2-512"],
+                },
+            )
+            ssh_compat = "legacy-sha1"
+
+        log.info("wipe: %s SSH mode: %s", device["name"], ssh_compat)
         channel = client.invoke_shell()
         time.sleep(1.5)
         channel.recv(4096)  # drain banner/motd
@@ -473,14 +547,14 @@ def _wipe_device_ssh(device: Dict[str, Any], username: str, password: str) -> st
 
         channel.close()
         client.close()
-        return "success"
+        return "success", ssh_compat
 
     except Exception as e:
         try:
             client.close()
         except Exception:
             pass
-        return f"error: {e}"
+        return f"error: {e}", ssh_compat
 
 
 def perform_wipe(devices: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -508,15 +582,22 @@ def perform_wipe(devices: List[Dict[str, Any]]) -> Dict[str, Any]:
             continue
 
         log.info("wiping %s (%s)...", device["name"], device["mgmt_ip"])
-        result = _wipe_device_ssh(device, username, password)
+        result, ssh_compat = _wipe_device_ssh(device, username, password)
 
         if result == "success":
             summary["wiped"] += 1
-            summary["details"].append({"device": device["name"], "status": "wiped"})
+            summary["details"].append({
+                "device": device["name"],
+                "status": "wiped",
+                "ssh_compat": ssh_compat,
+            })
             log.info("wipe: %s: OK (reload scheduled in 1 min)", device["name"])
         else:
             summary["failed"] += 1
-            summary["details"].append({"device": device["name"], "status": "failed", "error": result})
+            detail = {"device": device["name"], "status": "failed", "error": result}
+            if ssh_compat:
+                detail["ssh_compat"] = ssh_compat
+            summary["details"].append(detail)
             log.error("wipe: %s: FAILED: %s", device["name"], result)
 
     return summary

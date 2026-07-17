@@ -69,8 +69,8 @@ Precedence (most specific wins):
 2. `overrides.racks[<RAxx>]`: whole rack
 3. `session.pre_class`: default for everything not overridden
 
-This example assigns a separate profile to each of the three test platforms.
-The default remains `blank` for other inventory entries.
+This example sets a per-device mode for each test platform. The default remains
+`blank` for other inventory entries.
 
 ```yaml
 session:
@@ -81,8 +81,8 @@ session:
 overrides:
   devices:
     lab-dc-h-vm10:
-      mode: preconfigured
-      profile: csr1000v-test
+      mode: observe
+      profile: null
     lab-dc-h-sw01:
       mode: preconfigured
       profile: c9200l-demo
@@ -91,7 +91,7 @@ overrides:
       profile: isr4221-physical-test
 ```
 
-The CSR1000v gets `csr1000v-test`, the C9200L switch gets the minimal
+The CSR1000v is observed without writes, the C9200L switch gets the minimal
 `c9200l-demo` (single interface description on an unused port), and
 the ISR4221 gets the full seven-task `isr4221-physical-test`. Every
 other inventory device falls through to `session.pre_class` (blank).

@@ -2,23 +2,24 @@
 #
 # Credentials come from .env (LAB_USER / LAB_PASS): never put them here.
 #
-# This file shows a complete RA09 rack deployment:
-#   - C01-R01 router: IPs, routing, DHCP server, HSRP active
-#   - C02-R01 router: IPs, routing, DHCP server, HSRP standby
+# This file keeps one verified debug target active and includes a commented
+# RA09 rack example:
+#   - C01-R01 router: IPs, routing, and DHCP server
+#   - C02-R01 router: IPs, routing, and DHCP server
 #   - A01-SW01 switch: VLANs, access ports, uplink trunk, EtherChannel
 #
 # Uncomment devices as they are confirmed reachable.
 # Run: python3 automate.py
 
 devices:
-  - name: lab-dc-h-vm10
-    host: 10.199.64.91
-    ncclient_device_type: csr
+  - name: LAB-R11-C01-R01
+    host: 172.19.11.2
+    ncclient_device_type: iosxe
     changes:
       - id: test-desc
         type: interface_description
         interface_type: GigabitEthernet
-        interface_name: "1"
+        interface_name: "0/0/1"
         description: "TEST - automation working"
 
   # RA09: C02-R01 (right router, HSRP standby)
@@ -26,12 +27,6 @@ devices:
   # - name: LAB-RA09-C02-R01
   #   host: 172.17.9.66
   #   changes:
-  #     - id: c02-desc-mgmt
-  #       type: interface_description
-  #       interface_type: GigabitEthernet
-  #       interface_name: "1"
-  #       description: RA09-R management: 172.17.9.66/28
-  #
   #     - id: c02-desc-wan
   #       type: interface_description
   #       interface_type: GigabitEthernet
@@ -77,20 +72,9 @@ devices:
   #           wildcard: 0.0.0.31
   #           area: 0
   #
-  #     - id: c02-hsrp
-  #       type: hsrp
-  #       depends_on: [c02-desc-mgmt]
-  #       interface_type: GigabitEthernet
-  #       interface_name: "1"
-  #       group: 1
-  #       version: 2
-  #       priority: 100        # lower than C01 (110): C02 is HSRP standby
-  #       preempt: true
-  #       virtual_ip: 172.17.9.65
-  #
   #     - id: c02-dhcp
   #       type: dhcp_server
-  #       depends_on: [c02-hsrp]
+  #       depends_on: [c02-state-wan]
   #       excluded:
   #         - start: 172.17.9.65
   #           end: 172.17.9.84

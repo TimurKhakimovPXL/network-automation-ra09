@@ -35,8 +35,7 @@ network-automation-ra09/
 │       ├── ospf-baseline.yaml             #  ├─ reusable templates
 │       ├── routing-and-vlans.yaml         # ─┘
 │       ├── c9200l-demo.yaml               # ─┐
-│       ├── csr1000v-test.yaml             #  ├─ device-targeted profiles
-│       ├── isr4221-demo.yaml              #  │  (pinned via overrides
+│       ├── isr4221-demo.yaml              #  ├─ device-targeted profiles
 │       └── isr4221-physical-test.yaml     # ─┘   in class_state.yaml)
 │
 ├── infra/                                 # Layer 2: hardware as code
@@ -162,8 +161,8 @@ cp .env.example .env
 | `ra09-interface-description` | Tested against real hardware RA09 |
 | `network-automation` (flexible engine) | Validated against real hardware: ISR4221 17.3.4a, CSR1000v 16.9.5, C9200L 17.6.3 (2026-05-18) |
 | `ztp` | Written, not yet hardware tested |
-| **Reconciler (continuous loop)** | **Live on controller (lab-dc-h-vm09); converges three platforms idempotently** |
-| **Profiles (`intent/profiles/`)** | **Seven profiles: three reusable templates plus four device-targeted profiles (csr1000v-test, isr4221-demo, isr4221-physical-test, c9200l-demo)** |
+| **Reconciler (continuous loop)** | **Live on controller (lab-dc-h-vm09); writes the ISR4221 and C9200L targets and observes the CSR1000v without writes** |
+| **Profiles (`intent/profiles/`)** | **Six profiles: three reusable templates plus three device-targeted profiles (isr4221-demo, isr4221-physical-test, c9200l-demo)** |
 | **Inventory (`infra/inventory.yaml`)** | **22 devices catalogued (19 rack ISR4200s plus three test devices: CSR1000v `lab-dc-h-vm10` occupies the slot that would otherwise be LAB-RA09-C01-R01, plus ISR4221 and C9200L). MACs still pending for the rack fleet.** |
 | **OOB network** | **Designed, not yet built (see [docs/oob_network_design.md](docs/oob_network_design.md))** |
 | Ubuntu automation controller | Confirmed available on ESXi: setup with Leppens pending |

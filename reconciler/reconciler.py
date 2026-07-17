@@ -105,21 +105,237 @@ def is_reachable(mgmt_ip: str, port: int = 830, timeout: float = 3.0) -> bool:
 # Blank-mode convergence probe
 
 
+_MISSING = object()
+_MANAGED_INTERFACE_TYPES = frozenset({
+    "GigabitEthernet",
+    "TenGigabitEthernet",
+    "FortyGigabitEthernet",
+    "Loopback",
+    "Vlan",
+    "Port-channel",
+    "Tunnel",
+})
+_DEFAULT_VLAN_IDS = frozenset({1, 1002, 1003, 1004, 1005})
+_CONFIG_PROBE_PATHS = {
+    "interface": "/interface",
+    "router": "/router",
+    "ip": "/ip",
+    "vlan": "/vlan",
+}
+
+
+def _local_value(mapping: Dict[str, Any], name: str) -> Any:
+    """Return one unqualified or module-qualified child value."""
+    if not isinstance(mapping, dict):
+        raise ValueError(f"expected an object while reading {name}")
+    matches = [
+        value
+        for key, value in mapping.items()
+        if key == name or key.endswith(f":{name}")
+    ]
+    if len(matches) > 1:
+        raise ValueError(f"ambiguous RESTCONF keys for {name}")
+    return matches[0] if matches else _MISSING
+
+
+def _records(value: Any, label: str) -> List[Dict[str, Any]]:
+    """Normalise a RESTCONF list that may be encoded as one object."""
+    if value is _MISSING or value is None:
+        return []
+    if isinstance(value, dict):
+        return [value] if value else []
+    if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+        return value
+    raise ValueError(f"unexpected RESTCONF shape for {label}")
+
+
+def _interface_has_managed_config(payload: Dict[str, Any]) -> bool:
+    interface_data = _local_value(payload, "interface")
+    if not isinstance(interface_data, dict):
+        raise ValueError("RESTCONF interface container is missing or malformed")
+
+    for qualified_type, value in interface_data.items():
+        interface_type = qualified_type.rsplit(":", 1)[-1]
+        if interface_type not in _MANAGED_INTERFACE_TYPES:
+            continue
+
+        for interface in _records(value, f"interface/{interface_type}"):
+            name = _local_value(interface, "name")
+            if name is _MISSING:
+                raise ValueError(f"{interface_type} entry has no name")
+
+            # GigabitEthernet1 carries management access on this fleet. Nothing
+            # on that interface can authorize a destructive wipe.
+            if interface_type == "GigabitEthernet" and str(name) == "1":
+                continue
+
+            description = _local_value(interface, "description")
+            if description is not _MISSING:
+                if description is not None and not isinstance(description, str):
+                    raise ValueError("interface description is not text")
+                if description and description.strip():
+                    return True
+
+            ip_data = _local_value(interface, "ip")
+            if ip_data is not _MISSING:
+                if not isinstance(ip_data, dict):
+                    raise ValueError("interface IP container is malformed")
+                address_data = _local_value(ip_data, "address")
+                if address_data is not _MISSING:
+                    if not isinstance(address_data, dict):
+                        raise ValueError("interface address container is malformed")
+                    primary = _local_value(address_data, "primary")
+                    secondary = _local_value(address_data, "secondary")
+                    if _records(primary, "interface primary address"):
+                        return True
+                    if _records(secondary, "interface secondary address"):
+                        return True
+                helpers = _local_value(ip_data, "helper-address")
+                if _records(helpers, "interface helper-address"):
+                    return True
+
+            standby = _local_value(interface, "standby")
+            if standby is not _MISSING:
+                if not isinstance(standby, dict):
+                    raise ValueError("interface standby container is malformed")
+                if _records(
+                    _local_value(standby, "standby-list"),
+                    "interface standby-list",
+                ):
+                    return True
+
+            channel_group = _local_value(interface, "channel-group")
+            if channel_group is not _MISSING:
+                if not isinstance(channel_group, dict):
+                    raise ValueError("interface channel-group is malformed")
+                if _local_value(channel_group, "number") is not _MISSING:
+                    return True
+
+            switchport = _local_value(interface, "switchport")
+            if switchport is not _MISSING:
+                if not isinstance(switchport, dict):
+                    raise ValueError("interface switchport container is malformed")
+                mode = _local_value(switchport, "mode")
+                if mode is not _MISSING:
+                    if not isinstance(mode, dict):
+                        raise ValueError("interface switchport mode is malformed")
+                    if _local_value(mode, "trunk") is not _MISSING:
+                        return True
+
+                access = _local_value(switchport, "access")
+                if access is not _MISSING:
+                    if not isinstance(access, dict):
+                        raise ValueError("interface access VLAN is malformed")
+                    vlan = _local_value(access, "vlan")
+                    if vlan is not _MISSING:
+                        if not isinstance(vlan, dict):
+                            raise ValueError("interface access VLAN is malformed")
+                        vlan_id = _local_value(vlan, "vlan")
+                        if vlan_id is not _MISSING and str(vlan_id) != "1":
+                            return True
+
+                trunk = _local_value(switchport, "trunk")
+                if trunk is not _MISSING:
+                    if not isinstance(trunk, dict):
+                        raise ValueError("interface trunk container is malformed")
+                    if trunk:
+                        return True
+
+            # A Port-channel is not present in the factory configuration. Its
+            # existence is enough to identify EtherChannel configuration.
+            if interface_type == "Port-channel":
+                return True
+
+    return False
+
+
+def _router_has_managed_config(payload: Dict[str, Any]) -> bool:
+    router = _local_value(payload, "router")
+    if not isinstance(router, dict):
+        raise ValueError("RESTCONF router container is missing or malformed")
+
+    if _records(_local_value(router, "ospf"), "legacy OSPF process"):
+        return True
+
+    wrapped = _local_value(router, "router-ospf")
+    if wrapped is _MISSING:
+        return False
+    if not isinstance(wrapped, dict):
+        raise ValueError("wrapped OSPF container is malformed")
+    ospf = _local_value(wrapped, "ospf")
+    if ospf is _MISSING:
+        return False
+    if not isinstance(ospf, dict):
+        raise ValueError("wrapped OSPF process container is malformed")
+    return bool(_records(_local_value(ospf, "process-id"), "wrapped OSPF process"))
+
+
+def _ip_has_managed_config(payload: Dict[str, Any]) -> bool:
+    ip_data = _local_value(payload, "ip")
+    if not isinstance(ip_data, dict):
+        raise ValueError("RESTCONF IP container is missing or malformed")
+
+    route = _local_value(ip_data, "route")
+    if route is not _MISSING:
+        if not isinstance(route, dict):
+            raise ValueError("static route container is malformed")
+        routes = _local_value(route, "ip-route-interface-forwarding-list")
+        if _records(routes, "static route"):
+            return True
+
+    dhcp = _local_value(ip_data, "dhcp")
+    if dhcp is _MISSING:
+        return False
+    if not isinstance(dhcp, dict):
+        raise ValueError("DHCP container is malformed")
+    if _records(_local_value(dhcp, "pool"), "DHCP pool"):
+        return True
+    excluded = _local_value(dhcp, "excluded-address")
+    if excluded is not _MISSING and excluded not in ({}, []):
+        if not isinstance(excluded, (dict, list)):
+            raise ValueError("DHCP excluded-address container is malformed")
+        return True
+    return False
+
+
+def _vlan_has_managed_config(payload: Dict[str, Any]) -> bool:
+    vlan_data = _local_value(payload, "vlan")
+    if not isinstance(vlan_data, dict):
+        raise ValueError("RESTCONF VLAN container is missing or malformed")
+
+    for vlan in _records(_local_value(vlan_data, "vlan-list"), "VLAN list"):
+        vlan_id = _local_value(vlan, "id")
+        if vlan_id is _MISSING:
+            raise ValueError("VLAN entry has no id")
+        try:
+            numeric_id = int(vlan_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid VLAN id {vlan_id!r}") from exc
+        if numeric_id not in _DEFAULT_VLAN_IDS:
+            return True
+    return False
+
+
+def _payloads_have_managed_config(payloads: Dict[str, Optional[Dict[str, Any]]]) -> bool:
+    inspectors = {
+        "interface": _interface_has_managed_config,
+        "router": _router_has_managed_config,
+        "ip": _ip_has_managed_config,
+        "vlan": _vlan_has_managed_config,
+    }
+    results = [
+        payload is not None and inspectors[name](payload)
+        for name, payload in payloads.items()
+    ]
+    return any(results)
+
+
 def probe_has_config(device: Dict[str, Any]) -> bool:
-    """Return True if the device has any non-default configuration on paths
-    managed by this engine.
+    """Return whether configuration managed by the handlers is present.
 
-    Four RESTCONF paths are checked. A non-empty 200 response on any path means
-    managed configuration is still present.
-
-    Probe paths:
-        /router/ospf     : any OSPF process present?
-        /ip/route        : any static routes present?
-        /ip/dhcp/pool    : any DHCP server pools present?
-        /vlan            : any VLAN definitions present?
-
-    Network and parse errors return False. Reachability is checked before this
-    function is called, and a failed content probe must not trigger a wipe.
+    Every RESTCONF read must succeed or be an unconfigured-path 404 before the
+    result can be True. Any read or parsing ambiguity returns False so this
+    probe can never authorize a wipe from incomplete information.
     """
     import urllib3
     import requests
@@ -130,15 +346,9 @@ def probe_has_config(device: Dict[str, Any]) -> bool:
     headers = {"Accept": "application/yang-data+json"}
     base    = f"https://{host}/restconf/data/Cisco-IOS-XE-native:native"
 
-    probe_paths = [
-        "/router/ospf",
-        "/ip/route",
-        "/ip/dhcp/pool",
-        "/vlan",
-    ]
-
-    for path in probe_paths:
-        try:
+    payloads: Dict[str, Optional[Dict[str, Any]]] = {}
+    try:
+        for name, path in _CONFIG_PROBE_PATHS.items():
             r = requests.get(
                 f"{base}{path}",
                 auth=auth,
@@ -146,21 +356,27 @@ def probe_has_config(device: Dict[str, Any]) -> bool:
                 verify=False,
                 timeout=5,
             )
-            if r.status_code == 200:
-                # Any 200 with body data means config exists on this path.
-                # 404 = feature not configured = clean.
-                data = r.json()
-                if data:
-                    log.debug(
-                        "probe_has_config: %s has data on %s: device not blank",
-                        device["name"], path,
-                    )
-                    return True
-        except Exception as exc:
-            # A failed probe must not trigger a wipe.
-            log.debug("probe_has_config: %s path %s error: %s", device["name"], path, exc)
+            if r.status_code == 404:
+                payloads[name] = None
+                continue
+            if r.status_code != 200:
+                raise ValueError(f"{path} returned HTTP {r.status_code}")
+            data = r.json()
+            if not isinstance(data, dict):
+                raise ValueError(f"{path} returned non-object JSON")
+            payloads[name] = data
 
-    return False
+        has_config = _payloads_have_managed_config(payloads)
+        if has_config:
+            log.debug("probe_has_config: %s has managed configuration", device["name"])
+        return has_config
+    except Exception as exc:
+        log.warning(
+            "probe_has_config: %s probe was inconclusive; refusing wipe: %s",
+            device.get("name", host),
+            exc,
+        )
+        return False
 
 
 # Wipe handling

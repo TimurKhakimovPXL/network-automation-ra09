@@ -7,8 +7,8 @@ session:
 overrides:
   devices:
     lab-dc-h-vm10:
-      mode: preconfigured
-      profile: csr1000v-test
+      mode: observe
+      profile: null
     lab-dc-h-sw01:
       mode: preconfigured
       profile: c9200l-demo

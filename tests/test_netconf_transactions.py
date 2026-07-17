@@ -6,9 +6,10 @@ from handlers import _netconf
 
 
 class FakeSession:
-    def __init__(self, capabilities, fail_edit=False):
+    def __init__(self, capabilities, fail_edit=False, fail_unlock=False):
         self.server_capabilities = capabilities
         self.fail_edit = fail_edit
+        self.fail_unlock = fail_unlock
         self.calls = []
 
     def __enter__(self):
@@ -36,6 +37,8 @@ class FakeSession:
 
     def unlock(self, **kwargs):
         self.calls.append(("unlock", kwargs))
+        if self.fail_unlock:
+            raise RuntimeError("unlock rejected")
 
 
 def _apply(session):
@@ -64,6 +67,16 @@ def test_candidate_failure_discards_before_unlocking():
     assert [name for name, _ in session.calls] == [
         "lock", "edit_config", "discard_changes", "unlock"
     ]
+
+
+def test_candidate_commit_survives_unlock_failure_for_readback(caplog):
+    session = FakeSession([":candidate", ":validate"], fail_unlock=True)
+
+    assert _apply(session) == "candidate"
+    assert [name for name, _ in session.calls] == [
+        "lock", "edit_config", "validate", "commit", "unlock"
+    ]
+    assert "commit succeeded but unlock failed" in caplog.text
 
 
 def test_writable_running_uses_rollback_on_error_when_supported():

@@ -8,7 +8,12 @@ rather than assuming ``running`` is writable.
 
 from __future__ import annotations
 
+import logging
+
 from ncclient import manager
+
+
+log = logging.getLogger(__name__)
 
 
 def _supports(session, capability: str) -> bool:
@@ -42,9 +47,17 @@ def edit_config(device_params: dict, payload: str) -> str:
             finally:
                 try:
                     session.unlock(target="candidate")
-                except Exception:
+                except Exception as exc:
                     if primary_error is None:
-                        raise
+                        # The commit is already active. Raising here would make
+                        # the handler skip its RESTCONF verification and report
+                        # an edit failure for configuration that may have
+                        # landed. Closing the NETCONF session releases its lock.
+                        log.warning(
+                            "candidate commit succeeded but unlock failed; "
+                            "closing the session to release the lock: %s",
+                            exc,
+                        )
 
             if primary_error is not None:
                 raise primary_error

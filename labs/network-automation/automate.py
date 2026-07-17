@@ -1,28 +1,20 @@
-"""
-automate.py — Network automation engine (CLI debug surface)
-PXL DEVNET — Cisco IOS XE (ISR4200 / Catalyst)
+"""Single-device command-line runner for the network automation handlers.
 
 Usage:
     python3 automate.py
 
-Reads desired state from changes.yaml.
-Routes each change to the correct domain handler.
-Writes a structured report to report.json on completion.
+By default the script reads ``changes.yaml`` and writes ``report.json``. Use
+``--changes`` and ``--report`` to override either path.
 
 Adding a new domain:
     1. Create handlers/<domain>.py implementing
        handle(device_params, device_name, change) -> dict
-    2. Register it in dispatch.py::HANDLERS at the repo root — both
-       this CLI debug entry point and the reconciler will pick it up
-       automatically.
+    2. Register it in ``dispatch.py`` at the repository root.
 
-This file is a single-device CLI debug surface: it reads changes.yaml
-and pushes against one device without involving intent/inventory/profile.
-For GitOps reconciliation, the systemd unit network-reconciler.service
-runs reconciler/reconciler.py on a 60s loop. For one-shot reconciliation
-against the real intent stack, use scripts/manual_reconcile.py --dry-run.
+This runner bypasses inventory, profiles, and the continuous reconciler. Use
+``scripts/manual_reconcile.py --dry-run`` to inspect the normal intent path.
 
-Credentials are loaded from .env — never put them in changes.yaml.
+Credentials are read from ``.env``.
 """
 
 import argparse
@@ -36,7 +28,7 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-# ── Handler registry ───────────────────────────────────────────────────────────
+# Handler registry
 # HANDLERS is defined once in dispatch.py at the repo root and imported here
 # so both entry points (this CLI tool and reconciler/reconciler.py) share a
 # single registration site.
@@ -53,32 +45,32 @@ CHANGES_FILE = "changes.yaml"
 REPORT_FILE  = "report.json"
 
 
-# ── Logging ────────────────────────────────────────────────────────────────────
+# Logging
 
 def log(msg: str) -> None:
     timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
     print(f"[{timestamp}] {msg}")
 
 
-# ── YAML loading ───────────────────────────────────────────────────────────────
+# YAML loading
 
 def load_changes(path: str) -> dict:
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 
-# ── Device params ──────────────────────────────────────────────────────────────
+# Device params
 
 def build_device_params(device: dict, username: str, password: str) -> dict:
     """
     Build the ncclient connection parameter dict for a device.
     Host and port come from changes.yaml.
-    Credentials come from .env — never from the YAML file.
+    Credentials come from .env: never from the YAML file.
 
     The 'ncclient_device_type' field selects which ncclient profile is used
     for the NETCONF SSH subsystem negotiation. Values:
-        csr    — CSR1000v (default for backward compatibility)
-        iosxe  — ISR4200, Catalyst 9000 series, any other IOS XE platform
+        csr   : CSR1000v (default for backward compatibility)
+        iosxe : ISR4200, Catalyst 9000 series, any other IOS XE platform
     The field is set per-device in inventory.yaml (or per-entry in changes.yaml)
     and falls back to 'csr' if absent so existing inventory entries keep working.
     """
@@ -94,7 +86,7 @@ def build_device_params(device: dict, username: str, password: str) -> dict:
     }
 
 
-# ── Dispatcher ─────────────────────────────────────────────────────────────────
+# Dispatcher
 
 def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
     """
@@ -102,7 +94,7 @@ def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
     Returns a result dict suitable for inclusion in report.json.
 
     If the change type is unrecognised, returns an error result immediately
-    without touching the device — the run continues with remaining changes.
+    without touching the device: the run continues with remaining changes.
     """
     change_type = change.get("type")
 
@@ -111,7 +103,7 @@ def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
             "device_name": device_name,
             "type":        None,
             "status":      "missing_type",
-            "error":       "Change entry has no 'type' field — check changes.yaml",
+            "error":       "Change entry has no 'type' field: check changes.yaml",
         }
 
     handler = HANDLERS.get(change_type)
@@ -132,9 +124,7 @@ def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
         result.setdefault("device_name", device_name)
         return result
     except Exception as e:
-        # Handler raised an unexpected exception — record full traceback,
-        # continue the run. Without the traceback, debugging unattended
-        # runs against many devices is miserable.
+        # Keep the traceback in the report and continue with the next change.
         return {
             "device_name": device_name,
             "type":        change_type,
@@ -144,7 +134,7 @@ def dispatch(device_params: dict, device_name: str, change: dict) -> dict:
         }
 
 
-# ── Report ─────────────────────────────────────────────────────────────────────
+# Report
 
 def write_report(results: list[dict], report_file: str = REPORT_FILE) -> None:
     success = sum(1 for r in results if r.get("status") == "success")
@@ -171,7 +161,7 @@ def write_report(results: list[dict], report_file: str = REPORT_FILE) -> None:
         f"{skipped} skipped, {failed} failed)")
 
 
-# ── Entry point ────────────────────────────────────────────────────────────────
+# Entry point
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the single-device automation engine")
@@ -202,7 +192,7 @@ def main() -> None:
     devices = data.get("devices", [])
 
     if not devices:
-        print("[WARN] No devices defined in changes.yaml — nothing to do.")
+        print("[WARN] No devices defined in changes.yaml: nothing to do.")
         sys.exit(0)
 
     all_results: list[dict] = []
@@ -211,10 +201,10 @@ def main() -> None:
         device_name = device.get("name", device.get("host", "unknown"))
         changes     = device.get("changes", [])
 
-        log(f"=== {device_name} ({device['host']}) — {len(changes)} change(s) ===")
+        log(f"=== {device_name} ({device['host']}): {len(changes)} change(s) ===")
 
         if not changes:
-            log("  No changes defined for this device — skipping.")
+            log("  No changes defined for this device: skipping.")
             continue
 
         device_params = build_device_params(device, username, password)
@@ -233,7 +223,7 @@ def main() -> None:
                 }
                 all_results.append(result)
                 record_outcome(change, result, device_task_status)
-                log(f"  [SKIP] {change.get('type')} — depends_on unmet: {unmet}")
+                log(f"  [SKIP] {change.get('type')}: depends_on unmet: {unmet}")
                 continue
 
             result = dispatch(device_params, device_name, change)
@@ -242,11 +232,11 @@ def main() -> None:
 
             status = result.get("status", "unknown")
             if status == "success":
-                log(f"  [OK]   {result.get('type')} — {status}")
+                log(f"  [OK]   {result.get('type')}: {status}")
             elif status == "already_correct":
-                log(f"  [SKIP] {result.get('type')} — already correct")
+                log(f"  [SKIP] {result.get('type')}: already correct")
             else:
-                log(f"  [FAIL] {result.get('type')} — {status}: {result.get('error', '')}")
+                log(f"  [FAIL] {result.get('type')}: {status}: {result.get('error', '')}")
 
     write_report(all_results, args.report)
 

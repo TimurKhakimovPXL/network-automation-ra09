@@ -1,18 +1,15 @@
-"""
-state_resolver.py — Resolve intent + inventory + profile into per-device target state.
+"""Resolve intent, inventory, and profiles into per-device target state.
 
 Inputs:
-  intent/class_state.yaml  — what the lab should look like
-  infra/inventory.yaml     — what hardware exists
-  intent/profiles/*.yaml   — reusable device-state declarations
+  intent/class_state.yaml : what the lab should look like
+  infra/inventory.yaml    : what hardware exists
+  intent/profiles/*.yaml  : reusable device-state declarations
 
 Output:
-  Dict[device_name, List[change_dict]] — per-device list of changes to apply
+  Dict[device_name, List[change_dict]]: per-device list of changes to apply
 
-The resolver is pure: same inputs → same outputs, no side effects, no I/O beyond
-file reads. This makes it trivially testable. The reconciler calls resolve() once
-per loop iteration to produce the target state, then diffs it against the
-observed state.
+The resolver reads the three sources once per reconciliation loop. It does not
+write files or contact devices.
 """
 
 from pathlib import Path
@@ -22,7 +19,7 @@ import yaml
 from jinja2 import Environment, StrictUndefined, TemplateError
 
 
-# ─── Paths (relative to repo root) ────────────────────────────────────────────
+# Paths (relative to repo root)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 INTENT_FILE = REPO_ROOT / "intent" / "class_state.yaml"
@@ -30,7 +27,7 @@ INVENTORY_FILE = REPO_ROOT / "infra" / "inventory.yaml"
 PROFILES_DIR = REPO_ROOT / "intent" / "profiles"
 
 
-# ─── Custom exceptions ────────────────────────────────────────────────────────
+# Custom exceptions
 
 
 class ResolverError(Exception):
@@ -39,13 +36,11 @@ class ResolverError(Exception):
     supervisor to fix the YAML."""
 
 
-# ─── Public API ───────────────────────────────────────────────────────────────
+# Public API
 
 
 def resolve() -> Dict[str, Optional[List[Dict[str, Any]]]]:
-    """
-    Top-level entry point. Reads all three YAML sources and produces a per-device
-    target-state dict.
+    """Read the YAML sources and return target state by device name.
 
     Returns:
         {
@@ -55,9 +50,9 @@ def resolve() -> Dict[str, Optional[List[Dict[str, Any]]]]:
         }
 
     Per-device values encode the mode:
-        list of changes — preconfigured (apply these)
-        []              — blank (wipe any managed config)
-        None            — observe (probe only, no writes, no wipes)
+        list of changes: preconfigured (apply these)
+        []             : blank (wipe any managed config)
+        None           : observe (probe only, no writes, no wipes)
     """
     intent = _load_yaml(INTENT_FILE, "intent/class_state.yaml")
     inventory = _load_yaml(INVENTORY_FILE, "infra/inventory.yaml")
@@ -73,11 +68,11 @@ def resolve() -> Dict[str, Optional[List[Dict[str, Any]]]]:
         if not device_name:
             raise ResolverError(f"inventory entry missing 'name': {device!r}")
 
-        # Determine which profile applies. Precedence (most specific wins):
-        #   1. overrides.devices[<device-name>]    — single device
-        #   2. overrides.racks[<RAxx>]             — whole rack
-        #   3. overrides[<RAxx>]                   — legacy flat rack key (back-compat)
-        #   4. session.pre_class                   — default for everything else
+        # Select the most specific override.
+        #   1. overrides.devices[<device-name>]   : single device
+        #   2. overrides.racks[<RAxx>]            : whole rack
+        #   3. overrides[<RAxx>]                  : legacy flat rack key (back-compat)
+        #   4. session.pre_class                  : default for everything else
         rack_id = f"RA{device.get('rack', 0):02d}"
         overrides = intent.get("overrides") or {}
 
@@ -99,12 +94,12 @@ def resolve() -> Dict[str, Optional[List[Dict[str, Any]]]]:
             profile_name = pre_class.get("profile")
 
         if mode == "blank":
-            # Empty list — reconciler will wipe any managed config.
+            # Empty list: reconciler will wipe any managed config.
             target_state[device_name] = []
             continue
 
         if mode == "observe":
-            # None — reconciler probes reachability but never writes or wipes.
+            # None: reconciler probes reachability but never writes or wipes.
             # Distinct from blank ([]) which actively converges to empty.
             target_state[device_name] = None
             continue
@@ -126,21 +121,18 @@ def resolve() -> Dict[str, Optional[List[Dict[str, Any]]]]:
 
 
 def get_wipe_directive() -> bool:
-    """Returns True iff intent/class_state.yaml has maintenance.wipe_now == true.
-    The reconciler combines this with the commit-SHA tracking to decide whether
-    to actually wipe."""
+    """Return the value of ``maintenance.wipe_now`` from class_state.yaml."""
     intent = _load_yaml(INTENT_FILE, "intent/class_state.yaml")
     return bool((intent.get("maintenance") or {}).get("wipe_now", False))
 
 
 def get_inventory() -> List[Dict[str, Any]]:
-    """Returns the list of device dicts from inventory.yaml. Used by the
-    reconciler to know which devices to probe."""
+    """Return the device entries from inventory.yaml."""
     inventory = _load_yaml(INVENTORY_FILE, "infra/inventory.yaml")
     return inventory.get("devices") or []
 
 
-# ─── Internals ────────────────────────────────────────────────────────────────
+# Internals
 
 
 def _load_yaml(path: Path, label: str) -> Dict[str, Any]:
@@ -201,12 +193,11 @@ def _render_profile(profile_name: str, device: Dict[str, Any]) -> List[Dict[str,
     return changes
 
 
-# ─── Standalone debug entry point ─────────────────────────────────────────────
+# Standalone debug entry point
 
 
 if __name__ == "__main__":
-    """Run this directly to dump the resolved target state. Useful for verifying
-    a profile renders correctly without involving the full reconciler."""
+    # Print resolved state without starting the reconciler.
     import json
 
     try:

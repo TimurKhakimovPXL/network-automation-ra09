@@ -1,27 +1,8 @@
-"""
-dispatch.py
-───────────
-Single registration site for the change_type → handler mapping.
+"""Shared handler registry and dependency helpers.
 
-Lives at the repo root, not inside reconciler/, because the
-HANDLERS dict is shared between two entry points and ownership
-is neutral:
-
-  - reconciler/reconciler.py::apply_changes_to_device
-        production GitOps loop, intent-driven
-  - labs/network-automation/automate.py
-        single-device CLI debug, changes.yaml-driven
-
-Adding a new handler is one edit: import the module here, add an
-entry to the dict below. Both entry points pick it up.
-
-KNOWN WART (tracked for follow-up):
-    Handler modules currently live under labs/network-automation/
-    handlers/, which is documented as a "dev and historical" area.
-    This file reaches in via sys.path. The cleaner fix is to
-    relocate handlers/ to a neutral top-level location (e.g.
-    engine/handlers/) in a follow-up PR. Naming the wart here so
-    the next reader doesn't wonder.
+Both the reconciler and the single-device CLI import this module. Handler
+modules still live under ``labs/network-automation`` for compatibility, so the
+path is added below before they are imported.
 """
 
 from __future__ import annotations
@@ -30,9 +11,8 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict
 
-# Make labs/network-automation/handlers/ importable regardless of
-# which entry point loads this module. Path is computed relative
-# to this file so CWD doesn't matter.
+# Resolve the handler path relative to this file rather than the current
+# working directory.
 _HANDLERS_PATH = Path(__file__).resolve().parent / "labs" / "network-automation"
 if str(_HANDLERS_PATH) not in sys.path:
     sys.path.insert(0, str(_HANDLERS_PATH))
@@ -69,17 +49,9 @@ HANDLERS: Dict[str, HandlerFn] = {
 }
 
 
-# ─── Dependency resolution ───────────────────────────────────────
-# Shared between reconciler/reconciler.py::apply_changes_to_device
-# and labs/network-automation/automate.py. Both entry points use
-# task-id based dependencies — profiles declare `depends_on: <id>`
-# referring to other tasks in the same per-device run.
-#
-# Statuses that count as "success" for dependency purposes:
-#   - success         — task ran and verified
-#   - already_correct — task was idempotent, no write needed
-#
-# Any other status (failure, skipped, exception) blocks dependents.
+# Dependency resolution
+# Dependencies refer to task IDs from the same device run. Only ``success`` and
+# ``already_correct`` allow a dependent task to continue.
 
 SUCCESS_STATUSES = frozenset({"success", "already_correct"})
 SKIPPED_STATUS = "skipped_due_to_dependency"
@@ -91,13 +63,10 @@ def check_dependencies(
 ) -> list[str]:
     """Return the list of unmet prerequisite IDs for this change.
 
-    A prerequisite is unmet if its recorded status is not in
-    SUCCESS_STATUSES, or if it's referenced but never ran (not in
-    task_status at all — operator typo, or referenced a task that
-    comes later in document order).
+    A prerequisite is unmet when it did not succeed, has not run yet, or does
+    not exist in this device's task list.
 
-    Returns [] if all prerequisites are met or the change has no
-    depends_on.
+    An empty list means that the change can run.
     """
     depends_on = change.get("depends_on") or []
     if isinstance(depends_on, str):

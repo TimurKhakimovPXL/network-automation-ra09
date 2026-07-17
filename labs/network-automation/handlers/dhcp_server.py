@@ -1,7 +1,7 @@
 """
 handlers/dhcp_server.py
 
-Domain: IOS XE DHCP server — pools, exclusions, DNS, default gateway
+Domain: IOS XE DHCP server: pools, exclusions, DNS, default gateway
 YANG model: Cisco-IOS-XE-dhcp (namespace: http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp)
             augments /ios:native/ios:ip/ios:dhcp
 Read:  RESTCONF GET  → native/ip/dhcp/pool={pool_name}
@@ -12,9 +12,9 @@ YANG structure differs between IOS XE versions:
 
   network:
     16.x: container network { leaf number; leaf mask }
-          XML: <network><number>172.17.9.16</number><mask>255…</mask></network>
+          XML: <network><number>172.17.9.16</number><mask>255...</mask></network>
     17.x: container network { container primary-network { leaf number; leaf mask } }
-          XML: <network><primary-network><number>…</number><mask>…</mask></primary-network></network>
+          XML: <network><primary-network><number>...</number><mask>...</mask></primary-network></network>
 
   excluded-address:
     16.x: flat list excluded-address (key low-address)
@@ -43,11 +43,11 @@ YANG structure differs between IOS XE versions:
 Version is detected from NETCONF capabilities at runtime.
 
 Verification status:
-  17.x — YANG-verified against yang/ios-xe-1731/Cisco-IOS-XE-dhcp.yang.
+  17.x: YANG-verified against yang/ios-xe-1731/Cisco-IOS-XE-dhcp.yang.
          Live verification deferred: no current profile exercises this handler.
-  16.x — YANG-verified against yang/ios-xe-1681/Cisco-IOS-XE-dhcp.yang.
+  16.x: YANG-verified against yang/ios-xe-1681/Cisco-IOS-XE-dhcp.yang.
          The only 16.x device in inventory (CSR1000v 16.9.5) has not had
-         this code path exercised; treat 16.x as best-effort until validated.
+         this code path exercised, so it still needs a live test.
 
 Change schema in changes.yaml:
     - type: dhcp_server
@@ -88,12 +88,14 @@ RESTCONF_DHCP = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/ip/dhcp
 DHCP_NS = "http://cisco.com/ns/yang/Cisco-IOS-XE-dhcp"
 
 
-# ── Version detection ──────────────────────────────────────────────────────────
+# Version detection
 
 def _get_ios_xe_version(device_params: dict) -> float:
     """
-    Connect to device and extract IOS XE major.minor version from NETCONF
-    capabilities. Returns 17.0 as safe default if version cannot be determined.
+    Read the IOS XE major.minor version from NETCONF capabilities.
+
+    Return 17.0 when no version can be found to preserve the existing 17.x
+    payload behaviour.
     """
     try:
         with manager.connect(**device_params) as m:
@@ -111,7 +113,7 @@ def _is_pre_17(device_params: dict) -> bool:
     return _get_ios_xe_version(device_params) < 17.0
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get_pool(device_params: dict, pool_name: str) -> requests.Response:
     host     = device_params["host"]
@@ -143,7 +145,7 @@ def _extract_pool(response: requests.Response, pre_17: bool) -> dict | None:
         net_number = network_container.get("number")
         net_mask   = network_container.get("mask")
         # 16.x: leaf-list default-router and dns-server (may be single string,
-        # list, or absent — as_list handles all three uniformly)
+        # list, or absent; as_list handles all three forms)
         dns = norm.as_list(pool.get("dns-server"))
         gw  = norm.as_list(pool.get("default-router"))
     else:
@@ -158,7 +160,7 @@ def _extract_pool(response: requests.Response, pre_17: bool) -> dict | None:
         gw  = norm.as_list(gw_container.get("default-router-list")) if isinstance(gw_container, dict) else []
         dns = norm.as_list(dns_container.get("dns-server-list")) if isinstance(dns_container, dict) else []
 
-    # Canonicalise IP values so e.g. zero-padding or whitespace can't fool comparison
+    # Canonicalise address strings before comparison.
     gw_clean  = [norm.normalize_ipv4(g) for g in gw if norm.normalize_ipv4(g) is not None]
     dns_clean = [norm.normalize_ipv4(d) for d in dns if norm.normalize_ipv4(d) is not None]
 
@@ -171,8 +173,7 @@ def _extract_pool(response: requests.Response, pre_17: bool) -> dict | None:
 
 
 def _normalize_desired_pool(pool: dict) -> dict:
-    """Return a copy of the YAML-declared pool with values canonicalised
-    so it can be compared apples-to-apples against _extract_pool output."""
+    """Return the YAML pool in the format used by ``_extract_pool``."""
     return {
         "name":           pool.get("name"),
         "network":        norm.normalize_ipv4(pool.get("network")),
@@ -195,7 +196,7 @@ def _pool_matches(current: dict, desired_pool: dict) -> bool:
     )
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _build_excluded_xml(excluded: list[dict], pre_17: bool) -> str:
     """
@@ -301,7 +302,7 @@ def _netconf_edit(device_params: dict, change: dict, pre_17: bool) -> None:
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def _validate_change(change: dict) -> str | None:
     """
@@ -352,11 +353,11 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         result["error"]  = invalid
         return result
 
-    # Detect IOS XE version once — determines YANG structure for this device
+    # Detect IOS XE version once: determines YANG structure for this device
     pre_17 = _is_pre_17(device_params)
     result["ios_xe_pre_17"] = pre_17
 
-    # 1. Check each pool — if all already match, skip the write
+    # 1. Check each pool: if all already match, skip the write
     all_correct = True
     for pool in pools:
         try:

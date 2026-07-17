@@ -1,6 +1,6 @@
-# changes.yaml — Full rack deployment example
+# changes.yaml: Full rack deployment example
 #
-# Credentials come from .env (LAB_USER / LAB_PASS) — never put them here.
+# Credentials come from .env (LAB_USER / LAB_PASS): never put them here.
 #
 # This file shows a complete RA09 rack deployment:
 #   - C01-R01 router: IPs, routing, DHCP server, HSRP active
@@ -20,7 +20,7 @@ devices:
         interface_name: "1"
         description: "TEST - automation working"
 
-  # ── RA09 — C02-R01 (right router, HSRP standby) ───────────────────────────
+  # RA09: C02-R01 (right router, HSRP standby)
   # Same dependency pattern as C01-R01. Uncomment when ready to push.
   # - name: LAB-RA09-C02-R01
   #   host: 172.17.9.66
@@ -29,13 +29,13 @@ devices:
   #       type: interface_description
   #       interface_type: GigabitEthernet
   #       interface_name: "1"
-  #       description: RA09-R management — 172.17.9.66/28
+  #       description: RA09-R management: 172.17.9.66/28
   #
   #     - id: c02-desc-wan
   #       type: interface_description
   #       interface_type: GigabitEthernet
   #       interface_name: "0/0/1"
-  #       description: RA09-R WAN uplink — LAB-BR-A-SW08 Fa0/18
+  #       description: RA09-R WAN uplink: LAB-BR-A-SW08 Fa0/18
   #
   #     - id: c02-ip-wan
   #       type: interface_ip
@@ -83,7 +83,7 @@ devices:
   #       interface_name: "1"
   #       group: 1
   #       version: 2
-  #       priority: 100        # lower than C01 (110) — C02 is HSRP standby
+  #       priority: 100        # lower than C01 (110): C02 is HSRP standby
   #       preempt: true
   #       virtual_ip: 172.17.9.65
   #
@@ -102,7 +102,7 @@ devices:
   #             - 10.199.64.66
   #           lease_days: 1
 
-  # ── RA09 — A01-SW01 (left access switch) ──────────────────────────────────
+  # RA09: A01-SW01 (left access switch)
   # VLANs must exist before any interface_switchport references them.
   # Port-channel must exist before its trunk configuration is applied.
   # Member interfaces inherit channel-group config via the etherchannel

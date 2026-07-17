@@ -9,14 +9,10 @@ Write: NETCONF edit-config → <ip><helper-address> subtree
 Use this when the router is NOT the DHCP server but forwards client
 broadcasts to a central DHCP server (e.g. 10.199.64.66 in this lab).
 
-SEMANTICS — ADDITIVE (not converging):
+This handler is additive rather than fully converging:
     This handler adds any helper addresses declared in changes.yaml that
     are not already present. It does NOT remove helper addresses that exist
     on the device but are absent from changes.yaml.
-
-    Rationale: helper-address entries are safe to accumulate and removing
-    an unexpected entry could silently break DHCP for clients on that
-    interface. The safe operation is add-only.
 
     If you need to remove a helper address, do it via CLI and re-run
     the automation to verify the desired entries are present.
@@ -47,7 +43,7 @@ RESTCONF_HEADERS = {
 RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/interface/{iface_type}={iface_name}"
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get(device_params: dict, iface_type: str, iface_name: str) -> requests.Response:
     host     = device_params["host"]
@@ -73,8 +69,7 @@ def _extract_helpers(response: requests.Response, iface_type: str) -> set[str]:
     iface   = data.get(key, {})
     helpers = norm.as_list(iface.get("ip", {}).get("helper-address"))
 
-    # Normalise IPs to canonical form so e.g. '10.199.064.066' wouldn't
-    # masquerade as a different helper than '10.199.64.66'
+    # Compare canonical address strings.
     return {
         norm.normalize_ipv4(h.get("address"))
         for h in helpers
@@ -83,7 +78,7 @@ def _extract_helpers(response: requests.Response, iface_type: str) -> set[str]:
     }
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
                   helper_addresses: list[str]) -> None:
@@ -112,7 +107,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     iface_type      = change["interface_type"]
@@ -143,7 +138,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     if response.status_code == 404:
         result["status"] = "interface_not_found"
-        result["error"]  = f"HTTP 404 — {iface_type}{iface_name} not found"
+        result["error"]  = f"HTTP 404: {iface_type}{iface_name} not found"
         return result
 
     if not response.ok:
@@ -151,7 +146,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         result["error"]  = f"HTTP {response.status_code}"
         return result
 
-    # 2. Compare — additive semantics: only add missing helpers, never remove
+    # 2. Compare: additive semantics: only add missing helpers, never remove
     # existing ones not in changes.yaml (removal must be done via CLI)
     try:
         current_helpers = _extract_helpers(response, iface_type)
@@ -167,7 +162,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         result["verified"] = True
         return result
 
-    # 3. Write — only the missing helpers
+    # 3. Write: only the missing helpers
     try:
         _netconf_edit(device_params, iface_type, iface_name, list(missing))
         result["changed"] = True

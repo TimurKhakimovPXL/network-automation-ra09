@@ -1,6 +1,6 @@
 """
-ztp.py — Zero Touch Provisioning bootstrap script
-PXL DEVNET lab — Cisco IOS XE ISR4200 (16.8+)
+ztp.py: Zero Touch Provisioning bootstrap script
+PXL DEVNET lab: Cisco IOS XE ISR4200 (16.8+)
 
 Delivery:  TFTP server at 10.199.64.134
 Trigger:   DHCP option 67 → tftp://10.199.64.134/ztp.py
@@ -8,7 +8,7 @@ Trigger:   DHCP option 67 → tftp://10.199.64.134/ztp.py
 Execution environment: IOS XE Guest Shell (Python 3.6+)
 IOS XE CLI access via the built-in 'cli' module.
 
-How device identification works (fully automatic, no manual MAC list):
+Device identification:
   The device already received a DHCP lease before ZTP runs.
   This script reads the assigned IP from 'show interface Gig0/0/0',
   then derives rack number, side (C01/C02), hostname, and full config
@@ -23,7 +23,7 @@ How device identification works (fully automatic, no manual MAC list):
 
   Where X = rack number (1-10), derived from the third octet of the DHCP IP.
 
-What this script produces:
+Configuration applied by this script:
   - Hostname (LAB-RA0X-C01/C02-R01)
   - Enable secret + local admin credentials
   - Management interface IP (static, matching DHCP assignment)
@@ -44,9 +44,8 @@ import re
 import sys
 from datetime import datetime
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-# Credentials are read from environment variables.
-# For lab use, defaults are provided — override in production.
+# Constants
+# Credentials come from environment variables. The defaults are for lab use.
 
 DOMAIN_NAME   = os.environ.get("ZTP_DOMAIN",   "data.labnet.local")
 ENABLE_SECRET = os.environ.get("ZTP_SECRET",   "cisco")
@@ -54,11 +53,11 @@ ADMIN_USER    = os.environ.get("ZTP_USER",     "admin")
 ADMIN_PASS    = os.environ.get("ZTP_PASS",     "cisco")
 LOG_PATH      = os.environ.get("ZTP_LOG_PATH", "/bootflash/ztp.log")
 
-# Management interface — ISR4200 uses Gig0/0/0 as the management-side port
+# Management interface: ISR4200 uses Gig0/0/0 as the management-side port
 MGMT_INTERFACE = "GigabitEthernet0/0/0"
 
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# Logging
 
 def log(msg):
     """Write a timestamped message to bootflash:ztp.log and stdout."""
@@ -69,16 +68,15 @@ def log(msg):
         with open(LOG_PATH, "a") as f:
             f.write(line + "\n")
     except Exception:
-        pass  # Never abort ZTP due to a logging failure
+        pass  # Logging failure does not stop bootstrap.
 
 
-# ── Device identification ─────────────────────────────────────────────────────
+# Device identification
 
 def get_dhcp_ip():
     """
     Read the IP address currently assigned to the management interface
-    by DHCP. ZTP only runs after the device has received a DHCP lease,
-    so this IP is guaranteed to be present.
+    by DHCP.
 
     Returns the IP string e.g. '172.17.9.2', or None on failure.
     """
@@ -93,8 +91,7 @@ def get_dhcp_ip():
 
 def derive_device_config(dhcp_ip):
     """
-    Derive the full device config from the DHCP-assigned IP using the
-    PXL lab addressing scheme. No manual MAC inventory required.
+    Derive device settings from the DHCP address and the PXL rack scheme.
 
     Addressing logic:
       172.17.X.2  -> C01-R01 (left side, management subnet 172.17.X.0/28)
@@ -144,11 +141,11 @@ def derive_device_config(dhcp_ip):
 
     else:
         log(f"[ERROR] Host octet {host} does not match C01 (.2) or C02 (.66) pattern.")
-        log("Check DHCP reservations — device may have received an unexpected IP.")
+        log("Check DHCP reservations: device may have received an unexpected IP.")
         return None
 
 
-# ── RSA key generation ────────────────────────────────────────────────────────
+# RSA key generation
 
 def rsa_key_exists():
     """
@@ -164,13 +161,13 @@ def generate_rsa_key():
     """
     Generate a 2048-bit RSA key pair if one does not already exist.
 
-    RSA key generation is an exec-level command — it must be called via
+    RSA key generation is an exec-level command: it must be called via
     cli.execute(), not cli.configurep(). On IOS XE 16.8 some builds show
     an interactive confirmation prompt that can hang Guest Shell. The
     rsa_key_exists() pre-check avoids triggering generation unnecessarily.
     """
     if rsa_key_exists():
-        log("RSA key already exists — skipping generation.")
+        log("RSA key already exists: skipping generation.")
         return True
 
     log("Generating RSA 2048-bit key pair...")
@@ -188,22 +185,21 @@ def generate_rsa_key():
 
     except Exception as e:
         log(f"[WARN] RSA key generation raised exception: {e}")
-        log("Continuing — SSH will require manual key generation.")
+        log("Continuing: SSH will require manual key generation.")
         return False
 
 
-# ── Config push ───────────────────────────────────────────────────────────────
+# Config push
 
 def apply_config(device):
     """
     Push day-0 bootstrap configuration via cli.configurep().
 
-    cli.configurep() accepts a list of IOS config commands exactly as
-    typed in 'configure terminal', without 'conf t' or 'end'.
+    ``cli.configurep()`` accepts IOS configuration commands without ``conf t``
+    or ``end``.
 
     The management IP is set as a static address matching the DHCP-assigned
-    value. This ensures the IP survives DHCP lease expiry or server restart
-    before the Day-N automation controller pushes the full config.
+    value so the address remains valid after the DHCP lease expires.
     """
     hostname  = device["hostname"]
     mgmt_ip   = device["mgmt_ip"]
@@ -212,51 +208,49 @@ def apply_config(device):
 
     log(f"Pushing bootstrap config for {hostname}...")
 
-    # Warn loudly if either credential fell back to the lab default.
-    # In production the corresponding ZTP_* env var must be set on the
-    # Guest Shell environment before this script runs.
+    # Warn when a lab default is still in use.
     if ENABLE_SECRET == "cisco":
-        log("[WARN] Using default enable secret 'cisco' — set ZTP_SECRET in production")
+        log("[WARN] Using default enable secret 'cisco': set ZTP_SECRET in production")
     if ADMIN_PASS == "cisco":
-        log("[WARN] Using default admin password 'cisco' — set ZTP_PASS in production")
+        log("[WARN] Using default admin password 'cisco': set ZTP_PASS in production")
 
     config = [
-        # ── Identity ──────────────────────────────────────────────────────────
+        # Identity
         f"hostname {hostname}",
         f"ip domain-name {DOMAIN_NAME}",
 
-        # ── Credentials ───────────────────────────────────────────────────────
+        # Credentials
         f"enable secret {ENABLE_SECRET}",
         f"username {ADMIN_USER} privilege 15 secret {ADMIN_PASS}",
 
-        # ── Management interface — static IP matching DHCP assignment ─────────
+        # Management interface: static IP matching DHCP assignment
         f"interface {MGMT_INTERFACE}",
         f" ip address {mgmt_ip} {mgmt_mask}",
         " no shutdown",
         "exit",
 
-        # ── Default route ─────────────────────────────────────────────────────
+        # Default route
         f"ip route 0.0.0.0 0.0.0.0 {gateway}",
 
-        # ── Time sync — required for accurate logs and any future TLS certs ──
+        # Time sync: required for accurate logs and any future TLS certs
         "ntp server 10.199.64.66",
 
-        # ── SSH ───────────────────────────────────────────────────────────────
+        # SSH
         "ip ssh version 2",
         "ip ssh time-out 60",
         "ip ssh authentication-retries 3",
 
-        # ── VTY — SSH only ────────────────────────────────────────────────────
+        # VTY: SSH only
         "line vty 0 4",
         " login local",
         " transport input ssh",
         " exec-timeout 30 0",
         "exit",
 
-        # ── Disable plain HTTP (RESTCONF uses HTTPS on 443) ───────────────────
+        # Disable plain HTTP (RESTCONF uses HTTPS on 443)
         "no ip http server",
 
-        # ── Model-driven programmability ──────────────────────────────────────
+        # Model-driven programmability
         "ip http secure-server",
         "netconf-yang",
         "restconf",
@@ -280,13 +274,11 @@ def save_config():
         log(f"[WARN] write memory failed: {e}")
 
 
-# ── Verification ──────────────────────────────────────────────────────────────
+# Verification
 
 def verify(device):
     """
-    Post-config verification checks. Logs pass/fail per item.
-    Does not abort — config is already saved at this point.
-    Returns True if all checks pass.
+    Log the result of each post-configuration check.
     """
     log("--- Post-config verification ---")
     passed = 0
@@ -300,10 +292,10 @@ def verify(device):
                 log(f"[OK]   {label}")
                 passed += 1
             else:
-                log(f"[FAIL] {label} — '{expected}' not found")
+                log(f"[FAIL] {label}: '{expected}' not found")
                 failed += 1
         except Exception as e:
-            log(f"[FAIL] {label} — exception: {e}")
+            log(f"[FAIL] {label}: exception: {e}")
             failed += 1
 
     check("Hostname",      "show version",                      device["hostname"])
@@ -317,7 +309,7 @@ def verify(device):
     return failed == 0
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# Entry point
 
 def main():
     log("=" * 60)
@@ -336,7 +328,7 @@ def main():
 
     log(f"DHCP IP: {dhcp_ip}")
 
-    # 2. Derive device config from IP — no MAC inventory required
+    # 2. Derive device config from IP: no MAC inventory required
     log("Deriving device config from IP address scheme...")
     device = derive_device_config(dhcp_ip)
 
@@ -348,7 +340,7 @@ def main():
     log(f"Identified: {device['hostname']}  (rack {device['rack']}, {device['side']})")
     log(f"Management: {device['mgmt_ip']}/{device['mgmt_prefix']}  gateway {device['gateway']}")
 
-    # 3. RSA key — required for SSH v2, checked before generating
+    # 3. RSA key: required for SSH v2, checked before generating
     generate_rsa_key()
 
     # 4. Push bootstrap config
@@ -366,10 +358,10 @@ def main():
 
     log("=" * 60)
     if success:
-        log(f"ZTP complete — {device['hostname']} ready")
+        log(f"ZTP complete: {device['hostname']} ready")
         log(f"Reachable at {device['mgmt_ip']} via SSH / NETCONF / RESTCONF")
     else:
-        log(f"ZTP completed with warnings — review {LOG_PATH}")
+        log(f"ZTP completed with warnings: review {LOG_PATH}")
     log("=" * 60)
 
 

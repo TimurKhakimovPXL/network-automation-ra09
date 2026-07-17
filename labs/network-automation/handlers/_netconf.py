@@ -20,8 +20,8 @@ def edit_config(device_params: dict, payload: str) -> str:
 
     Candidate failures are discarded before the datastore is unlocked.  On a
     writable-running server, rollback-on-error is requested when advertised.
-    Exceptions are deliberately propagated so the calling handler can report
-    ``edit_failed`` with its existing result contract.
+    Configuration errors are re-raised for the handler to report as
+    ``edit_failed``.
     """
     with manager.connect(**device_params) as session:
         if _supports(session, ":candidate"):
@@ -37,8 +37,7 @@ def edit_config(device_params: dict, payload: str) -> str:
                 try:
                     session.discard_changes()
                 except Exception:
-                    # Preserve the configuration failure; cleanup errors must
-                    # not hide the actionable root cause from handler reports.
+                    # Keep the original edit error if cleanup also fails.
                     pass
             finally:
                 try:

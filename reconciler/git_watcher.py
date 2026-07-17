@@ -1,15 +1,11 @@
-"""
-git_watcher.py — Git interaction for the reconciler.
+"""Git operations used by the reconciler.
 
 Responsibilities:
   - Pull latest from the current branch's configured upstream on each iteration
   - Report the current commit SHA (used by the wipe_now idempotency check)
-  - Survive transient Git failures gracefully
+  - Continue from local state after a transient pull failure
 
-The reconciler does not write to Git. All commits originate from the supervisor's
-local clone. This is deliberate: keeping Git access read-only on the controller
-reduces the risk surface and aligns with the architectural principle that the
-controller is downstream of Git.
+The controller only reads from Git; commits are created in an operator's clone.
 """
 
 import logging
@@ -23,9 +19,7 @@ log = logging.getLogger(__name__)
 
 
 class GitError(Exception):
-    """Raised on unrecoverable Git failures. Recoverable failures (network blip
-    on pull, etc.) are logged and ignored — the reconciler continues with the
-    last successfully-pulled state."""
+    """Raised for Git failures that require operator action."""
 
 
 def pull() -> bool:
@@ -33,9 +27,7 @@ def pull() -> bool:
     Pull the latest from origin. Returns True on success, False on transient
     failure (caller should continue with last good state).
 
-    Does not raise on network errors — those are expected and recoverable.
-    Raises GitError only on configuration-level problems (not a Git repo,
-    branch detached, etc.) where the operator must intervene.
+    Network errors return False. Repository or branch errors raise GitError.
     """
     try:
         result = subprocess.run(
@@ -58,7 +50,7 @@ def pull() -> bool:
 
     stderr = result.stderr.strip()
 
-    # Common transient failures that we can survive
+    # Continue from local state for common network failures.
     if any(
         marker in stderr.lower()
         for marker in [
@@ -72,7 +64,6 @@ def pull() -> bool:
         log.warning("git pull transient failure (continuing with last good state): %s", stderr)
         return False
 
-    # Anything else is operator-action required
     raise GitError(f"git pull failed: {stderr}")
 
 

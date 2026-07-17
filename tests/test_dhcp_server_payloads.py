@@ -6,7 +6,7 @@ yang/ios-xe-1731/Cisco-IOS-XE-dhcp.yang for 17.x and
 yang/ios-xe-1681/Cisco-IOS-XE-dhcp.yang for 16.x, and that the
 RESTCONF parser handles the 17.x primary-network wrapper.
 
-Pure-function tests — no device, no network.
+These tests do not contact a device or network.
 """
 
 import re
@@ -19,7 +19,7 @@ def _strip(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-# ── 17.x XML payload ──────────────────────────────────────────────────────────
+# 17.x XML payload
 
 def test_pool_xml_17x_wraps_network_in_primary_network():
     pool = {
@@ -91,7 +91,7 @@ def test_excluded_xml_17x_empty_returns_empty_string():
     assert dhcp_server._build_excluded_xml([], pre_17=False) == ""
 
 
-# ── 16.x XML payload ──────────────────────────────────────────────────────────
+# 16.x XML payload
 
 def test_pool_xml_16x_uses_flat_network():
     pool = {
@@ -127,7 +127,7 @@ def test_excluded_xml_16x_is_flat_list():
     assert "<high-address>10.0.0.5</high-address>" in out
 
 
-# ── RESTCONF parser ───────────────────────────────────────────────────────────
+# RESTCONF parser
 
 def _fake_response(payload: dict):
     return SimpleNamespace(json=lambda: payload)
@@ -171,7 +171,7 @@ def test_extract_pool_16x_reads_flat_network():
     assert sorted(extracted["dns_servers"]) == ["1.1.1.1", "8.8.8.8"]
 
 
-# ── Input validation ──────────────────────────────────────────────────────────
+# Input validation
 
 def test_validate_rejects_invalid_network():
     err = dhcp_server._validate_change({

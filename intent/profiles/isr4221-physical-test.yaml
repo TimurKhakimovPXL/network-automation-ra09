@@ -1,72 +1,26 @@
-# ─────────────────────────────────────────────────────────────────────
-# isr4221-physical-test — multi-handler push against real ISR4221.
-# ─────────────────────────────────────────────────────────────────────
-#
-# Purpose: prove the engine drives a four-handler push end-to-end
-# against physical hardware via the GitOps loop. Extends the
-# isr4221-demo profile (Loopback0 only) to also configure Gi0/0/1
-# and OSPF process 1 advertising both networks.
-#
-# Target: LAB-R11-C01-R01 (ISR4221/K9, FGL2644LGX2, IOS XE 17.3.4)
-#
-# ── Handlers exercised ───────────────────────────────────────────────
-#   - interface_description  (Loopback0, Gi0/0/1)
-#   - interface_ip           (Loopback0, Gi0/0/1)
-#   - interface_state        (Loopback0, Gi0/0/1)
-#   - ospf                   (process 1, two networks; handler uses
-#                             the augmenting Cisco-IOS-XE-ospf:router-ospf
-#                             container and emits <wildcard> on every
-#                             revision we currently target — see
-#                             handlers/ospf.py and §3.5.9 of
-#                             network_automation_documentation.md)
-#
-# ── Safety analysis (verified via RESTCONF probe 2026-05-12) ─────────
-# Why each choice is safe:
-#
-#   Gi0/0/0 — MGMT INTERFACE — NOT TOUCHED.
-#     Carries 172.19.11.2/27, the session the controller uses to
-#     reach this device. Any write here would cut management.
-#
-#   Gi0/0/1 — SAFE TO CONFIGURE.
-#     Probed via RESTCONF native/interface — confirmed shutdown
-#     with no IP and no other configuration. Physically not
-#     connected (no link partner) so line protocol will stay down
-#     after "no shutdown" — admin state goes up, link stays down,
-#     OSPF won't form neighbours but process configuration applies
-#     cleanly. The engine doesn't check line protocol, only admin
-#     state via presence/absence of <shutdown/>.
-#
-#   192.0.2.0/30 — RFC 5737 TEST-NET-1 documentation prefix.
-#     Globally non-routable. Verified absent from static routes
-#     and from any reachable network on this device.
-#
-#   192.168.11.1/32 — Loopback0 from isr4221-demo. Reused here so
-#     idempotency stays intact on the already-converged interface
-#     while the new tasks light up.
-#
-#   Serial 0/1/0, 0/1/1 — NIM-2T sync serial. Out of scope per
-#     inventory.yaml comment block — not referenced anywhere here.
-#
-# ── Reversibility ────────────────────────────────────────────────────
-# To revert: edit class_state.yaml to point LAB-R11-C01-R01 back at
-# the original isr4221-demo profile. Gi0/0/1 configuration and OSPF
-# process 1 will remain on the device as latent (additive semantics —
-# the engine does not currently remove declarations that disappear
-# from intent). If a true cleanup is needed, that requires a follow-up
-# commit with a new profile excluding them plus maintenance.wipe_now,
-# or a manual CLI cleanup outside the automation.
-# ─────────────────────────────────────────────────────────────────────
 
-description: "ISR4221 multi-handler test — Loopback0 + Gi0/0/1 + OSPF area 0"
+# Multi-handler profile for LAB-R11-C01-R01, an ISR4221 running IOS XE 17.3.4.
+# It configures Loopback0, unused physical port Gi0/0/1, and OSPF process 1.
+# Gi0/0/0 is the management path and is intentionally absent. Gi0/0/1 was
+# confirmed shut down, unaddressed, and physically disconnected on 2026-05-12.
+# 192.0.2.0/30 is TEST-NET-1; 192.168.11.1/32 is the loopback from the smaller
+# isr4221-demo profile. NIM-2T serial interfaces remain outside the scope.
+#
+# Switching back to isr4221-demo does not remove Gi0/0/1 or OSPF because these
+# handlers are additive. Use a maintenance wipe or remove them manually when a
+# clean rollback is required.
+
+
+description: "ISR4221 multi-handler test: Loopback0 + Gi0/0/1 + OSPF area 0"
 
 per_device_changes:
 
-  # ── Loopback0 (preserved from isr4221-demo for idempotency check) ─
+  # Loopback0, retained from isr4221-demo for the idempotency check
   - id: loopback0-description
     type: interface_description
     interface_type: Loopback
     interface_name: "0"
-    description: "Managed by network-automation-ra09 — RA11 demo loopback"
+    description: "Managed by network-automation-ra09: RA11 demo loopback"
 
   - id: loopback0-ip
     type: interface_ip
@@ -83,12 +37,12 @@ per_device_changes:
     state: up
     depends_on: loopback0-ip
 
-  # ── Gi0/0/1 (new — physical port, currently shutdown + unconfigured) ─
+  # Gi0/0/1 is currently shut down and unconfigured
   - id: gi001-description
     type: interface_description
     interface_type: GigabitEthernet
     interface_name: "0/0/1"
-    description: "Managed by network-automation-ra09 — physical port test (no link expected)"
+    description: "Managed by network-automation-ra09: physical port test (no link expected)"
 
   - id: gi001-ip
     type: interface_ip
@@ -105,17 +59,12 @@ per_device_changes:
     state: up
     depends_on: gi001-ip
 
-  # ── OSPF process 1 advertising both networks ──────────────────────
+  # OSPF process 1 advertising both networks
   # First OSPF process on this device. Two networks:
   #   - 192.168.11.1/32 (Loopback0) in area 0
   #   - 192.0.2.0/30 (Gi0/0/1 subnet) in area 0
-  # Wildcard values below are sent verbatim as the <wildcard> leaf
-  # of the augmenting Cisco-IOS-XE-ospf schema (network list key
-  # is "ip wildcard" on every revision the handler currently writes
-  # against). _get_ospf_model_revision is still queried at runtime
-  # and recorded in report.json as ospf_model_revision for audit,
-  # but _uses_mask_element returns False unconditionally — see
-  # handlers/ospf.py and §3.5.9 of network_automation_documentation.md.
+  # The handler selects the OSPF payload shape from the advertised model
+  # revision and records both the revision and selected schema in the report.
   - id: ospf-process
     type: ospf
     process_id: 1

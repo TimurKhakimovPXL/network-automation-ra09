@@ -1,9 +1,9 @@
 """
 handlers/hsrp.py
 
-Domain: HSRP (Hot Standby Router Protocol) — gateway redundancy
+Domain: HSRP (Hot Standby Router Protocol): gateway redundancy
 YANG model: Cisco-IOS-XE-interfaces (submodule of Cisco-IOS-XE-native)
-            standby container is in native namespace — no xmlns override needed
+            standby container is in native namespace: no xmlns override needed
 Read:  RESTCONF GET  → native/interface/{type}={name}
 Write: NETCONF edit-config → <standby> subtree (native namespace)
 
@@ -36,7 +36,7 @@ RESTCONF_HEADERS = {
 RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/interface/{iface_type}={iface_name}"
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get(device_params: dict, iface_type: str, iface_name: str) -> requests.Response:
     host     = device_params["host"]
@@ -82,7 +82,7 @@ def _states_match(current: dict, desired: dict) -> bool:
     )
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
                   change: dict) -> None:
@@ -123,7 +123,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     iface_type = change["interface_type"]
@@ -157,7 +157,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     if response.status_code == 404:
         result["status"] = "interface_not_found"
-        result["error"]  = f"HTTP 404 — {iface_type}{iface_name} not found"
+        result["error"]  = f"HTTP 404: {iface_type}{iface_name} not found"
         return result
 
     if not response.ok:

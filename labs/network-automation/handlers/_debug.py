@@ -1,13 +1,7 @@
 """
 handlers/_debug.py
 
-Per-run debug capture for raw RESTCONF responses.
-
-Why this exists:
-    When verify_mismatch or any unexpected status occurs against real
-    hardware, the raw response body is the only artifact that shows
-    what the device actually returned vs what the parser expected.
-    Without it, debugging is guesswork.
+Per-run capture of raw RESTCONF responses for parser and verification errors.
 
 Usage in a handler:
     from . import _debug
@@ -15,9 +9,8 @@ Usage in a handler:
     response = _restconf_get(...)
     _debug.capture(device_name, change_type, "read", response, change)
 
-Files are written to ./debug/<run_timestamp>/<device>/<change_type>_<seq>.json
-The capture is best-effort — failure to write a debug file is logged
-to stderr and never propagates to the handler.
+Files are written to ./debug/<run_timestamp>/<device>/<change_type>_<seq>.json.
+Write errors are sent to stderr and do not replace the handler result.
 
 Toggle via environment variable:
     DEBUG_CAPTURE=1   # capture every read (verbose, useful first run)
@@ -68,7 +61,7 @@ def capture(device_name: str,
     phase: "read" | "verify" | "error"
     force: write even if DEBUG_CAPTURE=0 (use for failures)
 
-    Never raises — debug capture failure must not affect the handler.
+    Capture failures are logged and suppressed.
     """
     if not (force or _verbose()):
         return
@@ -105,5 +98,4 @@ def capture(device_name: str,
             json.dump(record, f, indent=2, default=str)
 
     except Exception as e:
-        # Never let debug capture interfere with the actual handler outcome.
         print(f"[debug capture failed: {e}]", file=sys.stderr)

@@ -1,15 +1,15 @@
 # RESTCONF keypath debugging
 
 When a RESTCONF GET against a fully-qualified, keyed path returns
-`{"errors": [{"error-message": "uri keypath not found"}]}`, it almost
-never means the device has no configuration. It means the *path
-itself* does not exist in the device's YANG model — typically because
+`{"errors": [{"error-message": "uri keypath not found"}]}`, first check the
+path itself. The requested hierarchy may not exist in the device's YANG model,
+often because
 the data lives inside an augmenting module's container that the path
 skipped over.
 
 ## Diagnostic chain
 
-### Step 1 — Confirm the symptom
+### Step 1: Confirm the symptom
 
     sudo -u netauto -H bash -c '
       set -a; source /opt/network-automation-ra09/.env; set +a
@@ -19,28 +19,28 @@ skipped over.
       | python3 -m json.tool
     '
 
-If the response is the `uri keypath not found` JSON error, do NOT
-conclude the feature is unconfigured. Proceed.
+If the response is the `uri keypath not found` JSON error, continue with a
+broader parent path before deciding that the feature is unconfigured.
 
-### Step 2 — Walk up to the broadest parent
+### Step 2: Walk up to the broadest parent
 
 Remove the keyed predicate and any optional segments and GET the
 broadest reasonable parent. For OSPF on IOS XE this was
-`…/Cisco-IOS-XE-native:native/router`. For interface oper data it
-might be `…/Cisco-IOS-XE-interfaces-oper:interfaces`. For VLAN it
-could be `…/Cisco-IOS-XE-native:native/vlan`.
+`.../Cisco-IOS-XE-native:native/router`. For interface oper data it
+might be `.../Cisco-IOS-XE-interfaces-oper:interfaces`. For VLAN it
+could be `.../Cisco-IOS-XE-native:native/vlan`.
 
 The response tells you where the data actually lives. Look for keys
-that are module-prefixed (e.g. `Cisco-IOS-XE-ospf:router-ospf`) —
-those are augmenting modules adding structure under the native model.
+that are module-prefixed (for example, `Cisco-IOS-XE-ospf:router-ospf`). These
+come from augmenting modules that add structure under the native model.
 
-### Step 3 — Reconstruct the correct path
+### Step 3: Reconstruct the correct path
 
 Build the path down the actual hierarchy the response revealed, using
 module-prefixed keys at every augmentation boundary. Verify with one
 final keyed GET.
 
-## Worked example — OSPF on LAB-R11-C01-R01
+## Worked example: OSPF on LAB-R11-C01-R01
 
 Initial path tried (handler default):
 
@@ -48,7 +48,7 @@ Initial path tried (handler default):
 
 Response: `uri keypath not found`.
 
-Walk up to `…/router`:
+Walk up to `.../router`:
 
     {
       "Cisco-IOS-XE-native:router": {
@@ -69,16 +69,16 @@ Correct path:
 Returns the expected single entry. Read path and write payload now
 agree.
 
-## Why this matters for write paths too
+## Applying the result to write paths
 
 The same hierarchy applies to NETCONF edit-config payloads. A write
 that targets the flat path may succeed in returning `<ok/>` because
 the device's CLI translation layer reconstructs scalar leaves from
 arbitrary XML structure. But structured list elements (networks,
-address-families, redistribute lists) silently fall on the floor when
+address-families, redistribute lists) may be ignored when
 the surrounding container is wrong. The handler's verify cycle is
-only meaningful if the read path knows where to look — which means
-both paths must be derived from the same diagnostic.
+only meaningful if the read path knows where to look. Derive both paths from
+the same model hierarchy.
 
 ## When to suspect this issue
 
@@ -88,7 +88,7 @@ both paths must be derived from the same diagnostic.
   reported success. Especially if the rpc-reply was bare `<ok/>` with
   no warnings.
 - Working with a YANG module ending in `-ospf`, `-bgp`, `-eigrp`,
-  `-hsrp`, `-ethernet`, `-vlan`, `-ip` — anything that augments the
+  `-hsrp`, `-ethernet`, `-vlan`, `-ip`: anything that augments the
   native model rather than living directly inside it.
 
 ## Reference

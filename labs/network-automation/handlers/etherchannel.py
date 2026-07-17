@@ -14,7 +14,7 @@ Read:  RESTCONF GET  →
        native/interface/{type}={name}/Cisco-IOS-XE-ethernet:channel-protocol (per member, optional)
 Write: NETCONF edit-config →
        <Port-channel> for the bundle itself, plus per-member
-       <channel-group xmlns="…ethernet"> and <channel-protocol xmlns="…ethernet">.
+       <channel-group xmlns="...ethernet"> and <channel-protocol xmlns="...ethernet">.
 
 mode / protocol matrix:
     mode=active  | passive            → protocol must be lacp (or omitted)
@@ -61,13 +61,12 @@ ETHERNET_NS = "http://cisco.com/ns/yang/Cisco-IOS-XE-ethernet"
 
 VALID_MODES     = {"active", "passive", "on", "desirable", "auto"}
 VALID_PROTOCOLS = {"lacp", "pagp", "none"}
-# Modes implied by each protocol; the empty set means "any mode" — used to
-# allow a stricter check than just "is the mode/protocol pair listed?"
+# Valid negotiation modes by protocol.
 LACP_MODES = {"active", "passive"}
 PAGP_MODES = {"desirable", "auto"}
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get(device_params: dict, channel_id: int) -> requests.Response:
     host     = device_params["host"]
@@ -128,7 +127,7 @@ def _extract_member_channel(response: requests.Response, iface_type: str) -> dic
     }
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _build_member_xml(member: dict, channel_id: int, mode: str, protocol: str) -> str:
     """
@@ -136,10 +135,8 @@ def _build_member_xml(member: dict, channel_id: int, mode: str, protocol: str) -
     sibling leaves added by config-interface-ethernet-grouping under each
     physical interface. Both live in the Cisco-IOS-XE-ethernet namespace.
 
-    mode=on is a static channel — no protocol is configured on the wire,
-    so <channel-protocol> is omitted. For lacp/pagp we emit it explicitly
-    so the device matches the declared protocol rather than relying on the
-    mode→protocol implication.
+    Static channels omit ``channel-protocol``. LACP and PAgP channels include
+    it explicitly.
     """
     iface_type = xml.interface_tag(member["interface_type"])
     iface_name = member["interface_name"]
@@ -196,7 +193,7 @@ def _netconf_edit(device_params: dict, change: dict) -> None:
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def _validate_change(change: dict) -> str | None:
     """Reject malformed inputs before the device is touched."""
@@ -244,8 +241,7 @@ def _verify_members(
     Verify that each member interface advertises the expected channel-group
     number, mode, and (when applicable) channel-protocol via RESTCONF.
 
-    Returns (all_ok, list_of_mismatch_descriptions). A 404 on a member is
-    treated as a mismatch — the augment didn't land.
+    Return ``(all_ok, mismatch_descriptions)``. A missing member is a mismatch.
     """
     effective_mode     = mode if protocol != "none" else "on"
     expected_protocol  = protocol if protocol in ("lacp", "pagp") else None
@@ -354,7 +350,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         result["error"]  = str(e)
         return result
 
-    # 4. Verify — port-channel bundle and every member
+    # 4. Verify: port-channel bundle and every member
     try:
         verify_response = _restconf_get(device_params, channel_id)
         if not verify_response.ok:

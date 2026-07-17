@@ -6,7 +6,7 @@ config-interface-ethernet-grouping (channel-group sibling channel-protocol,
 both in the Cisco-IOS-XE-ethernet namespace), and that mode/protocol
 combinations are validated before any device write.
 
-Pure-function tests — no device, no network.
+These tests do not contact a device or network.
 """
 
 import re
@@ -19,7 +19,7 @@ def _strip(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-# ── Member XML ────────────────────────────────────────────────────────────────
+# Member XML
 
 def test_member_xml_lacp_emits_channel_protocol():
     member = {"interface_type": "GigabitEthernet", "interface_name": "0/1"}
@@ -44,7 +44,7 @@ def test_member_xml_none_protocol_omits_channel_protocol_and_forces_on():
     member = {"interface_type": "GigabitEthernet", "interface_name": "0/3"}
     out = _strip(ec._build_member_xml(member, channel_id=3, mode="active", protocol="none"))
     assert "<channel-protocol" not in out
-    # protocol=none degenerates to static channel — mode must be "on" on the wire
+    # protocol=none degenerates to static channel: mode must be "on" on the wire
     assert "<mode>on</mode>" in out
 
 
@@ -55,7 +55,7 @@ def test_member_xml_uses_ethernet_namespace_on_both_leaves():
     assert out.count('xmlns="http://cisco.com/ns/yang/Cisco-IOS-XE-ethernet"') == 2
 
 
-# ── Validation ────────────────────────────────────────────────────────────────
+# Validation
 
 def _base():
     return {
@@ -115,7 +115,7 @@ def test_validate_rejects_empty_members():
     assert "no member interfaces" in (ec._validate_change(bad) or "")
 
 
-# ── Member RESTCONF parser ────────────────────────────────────────────────────
+# Member RESTCONF parser
 
 def _fake_response(payload):
     return SimpleNamespace(json=lambda: payload)

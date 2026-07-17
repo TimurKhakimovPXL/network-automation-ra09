@@ -35,7 +35,7 @@ RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/vlan/vl
 RESTCONF_ALL  = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/vlan"
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get_all(device_params: dict) -> requests.Response:
     host     = device_params["host"]
@@ -73,7 +73,7 @@ def _desired_vlans(change: dict) -> dict[int, str]:
     }
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _build_vlan_xml(vlans: dict[int, str]) -> str:
     lines = []
@@ -103,7 +103,7 @@ def _netconf_edit(device_params: dict, vlans: dict[int, str]) -> None:
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     result = {
@@ -152,7 +152,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
 
     result["delta"] = [{"id": vid, "name": name} for vid, name in delta.items()]
 
-    # 3. Write — only push the delta
+    # 3. Write: only push the delta
     try:
         _netconf_edit(device_params, delta)
         result["changed"] = True

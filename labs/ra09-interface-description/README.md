@@ -1,6 +1,7 @@
-# RA09 – Interface Description Automation
+# RA09 Interface Description Automation
 
-> YAML-driven, idempotent interface description management on Cisco IOS XE using RESTCONF and NETCONF.
+This lab manages IOS XE interface descriptions from YAML using RESTCONF and
+NETCONF.
 
 ---
 
@@ -11,8 +12,8 @@ Desired state is declared in a YAML file. The script reads current state via **R
 the desired state, and applies any delta via **NETCONF**. A final RESTCONF read verifies the change.
 Results are written to a structured JSON report.
 
-The workflow is fully **idempotent**: running it twice produces the same outcome — the second run detects
-the description is already correct and skips the change without touching the device.
+The workflow is idempotent. On a second run, a matching description is reported
+as `already_correct` and no write is sent.
 
 ---
 
@@ -106,14 +107,14 @@ LAB_USER=your_username
 LAB_PASS=your_password
 ```
 
-> **Note:** `.env` is listed in `.gitignore` and will never be committed. Never share or commit this file.
+> `.env` is ignored by Git. Keep it private and do not force-add it.
 
 ---
 
 ## Configuration
 
 Edit `changes.yaml` to declare your desired state. Each device entry supports multiple interface changes.
-Credentials are loaded from `.env` — do not add them here.
+Credentials are loaded from `.env`: do not add them here.
 
 ```yaml
 devices:
@@ -139,7 +140,7 @@ The script reads `changes.yaml` from the working directory and writes `report.js
 
 ## Output
 
-**Console (first run — change applied):**
+**Console (first run: change applied):**
 
 ```
 === Processing LAB-RA09-C01-R01 GigabitEthernet0/0/0 ===
@@ -150,7 +151,7 @@ The script reads `changes.yaml` from the working directory and writes `report.js
 [INFO] Report written to report.json
 ```
 
-**Console (second run — idempotent):**
+**Console (second run: idempotent):**
 
 ```
 === Processing LAB-RA09-C01-R01 GigabitEthernet0/0/0 ===
@@ -222,4 +223,4 @@ The script reads `changes.yaml` from the working directory and writes `report.js
 
 ## Course Context
 
-This lab is part of the **NetAcad DEVASC** (DevNet Associate) curriculum — RA09.
+This lab is part of the **NetAcad DEVASC** (DevNet Associate) curriculum: RA09.

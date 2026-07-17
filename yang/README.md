@@ -4,7 +4,7 @@ This directory vendors the Cisco IOS XE YANG models that the handlers in
 `labs/network-automation/handlers/` depend on. Two versions are kept side by
 side because the codebase branches behaviour between them at runtime.
 
-## Why these are in the repo
+## Purpose
 
 The handlers reference specific YANG paths and namespaces. When Cisco changes
 a model structure between IOS XE versions (e.g. OSPF's `<mask>` becoming
@@ -12,12 +12,11 @@ a model structure between IOS XE versions (e.g. OSPF's `<mask>` becoming
 a container in 17.x), the handler code branches via runtime version
 detection.
 
-Without the YANG source files in version control, the *why* of every such
-branch lives only in commit messages and external Cisco docs. Vendoring
-them makes the reasoning auditable: `git diff yang/ios-xe-1681/Cisco-IOS-XE-ospf.yang yang/ios-xe-1731/Cisco-IOS-XE-ospf.yang`
-shows exactly what changed and therefore why the handler branches.
+Keeping the source files in version control makes those branches reviewable.
+For example, `git diff yang/ios-xe-1681/Cisco-IOS-XE-ospf.yang
+yang/ios-xe-1731/Cisco-IOS-XE-ospf.yang` shows the model differences directly.
 
-## Why these versions
+## Included versions
 
 The two versions correspond to the two IOS XE major releases the codebase
 actively supports:
@@ -31,7 +30,7 @@ If a future device runs a version with materially different YANG structures
 (e.g. 17.6.x's revised DHCP container layout), add a new `ios-xe-XXXX/`
 directory rather than overwriting these.
 
-## Why only these five modules
+## Included modules
 
 Only the modules the handlers actually touch:
 
@@ -54,7 +53,7 @@ Files are unmodified copies from:
 
 Each file retains its original Cisco copyright header. They are redistributed
 under the same license terms (Cisco's BSD-style license for IOS XE YANG
-models — see the file headers themselves).
+models; see the file headers themselves).
 
 ## Refreshing
 
@@ -64,8 +63,8 @@ To re-pull the files from upstream (e.g. after a Cisco model revision):
 ./fetch_yang.sh
 ```
 
-The script is idempotent — it overwrites existing files with the upstream
-versions. Diff the result before committing to see what changed.
+The script overwrites the local copies with the upstream versions. Review the
+diff before committing the refresh.
 
 ## Validation
 

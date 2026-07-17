@@ -1,9 +1,7 @@
 #!/bin/bash
-# deploy_to_tftp.sh — Push ztp.py from Git to the TFTP server.
+# deploy_to_tftp.sh: Push ztp.py from Git to the TFTP server.
 #
-# Same single-source-of-truth principle as everything else: ztp.py lives in
-# Git. The TFTP server's copy is a downstream render target. This script
-# updates the render whenever the source changes.
+# Copy the tracked ztp.py to the TFTP server.
 #
 # Run from the repo root:
 #   ./labs/ztp/deploy_to_tftp.sh
@@ -15,7 +13,7 @@
 
 set -euo pipefail
 
-# ─── Configuration ──────────────────────────────────────────────────────────
+# Configuration
 
 TFTP_HOST="${TFTP_HOST:-10.199.64.134}"
 TFTP_USER="${TFTP_USER:-tftpadmin}"
@@ -24,7 +22,7 @@ TFTP_PATH="${TFTP_PATH:-/srv/tftp/ztp.py}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_FILE="${SCRIPT_DIR}/ztp.py"
 
-# ─── Sanity checks ──────────────────────────────────────────────────────────
+# Sanity checks
 
 if [[ ! -f "${SOURCE_FILE}" ]]; then
     echo "ERROR: source file not found: ${SOURCE_FILE}" >&2
@@ -36,9 +34,9 @@ if ! command -v scp >/dev/null 2>&1; then
     exit 1
 fi
 
-# ─── Deploy ─────────────────────────────────────────────────────────────────
+# Deploy
 
-echo "Deploying ${SOURCE_FILE} → ${TFTP_USER}@${TFTP_HOST}:${TFTP_PATH}"
+echo "Deploying ${SOURCE_FILE} to ${TFTP_USER}@${TFTP_HOST}:${TFTP_PATH}"
 
 scp -o BatchMode=yes -o ConnectTimeout=10 \
     "${SOURCE_FILE}" \

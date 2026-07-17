@@ -1,26 +1,17 @@
-# inventory.yaml — Single source of truth for what hardware exists in the lab.
-#
-# This file declares every Cisco device under management. The reconciler reads
-# it to know what to converge; scripts/apply_dhcp_reservations.py reads it to
-# render DHCP reservations; profiles use it as the substrate for templating.
-#
-# When a new device is racked, add an entry here. Everything downstream updates
-# automatically on the next reconciliation cycle.
+# Cisco devices known to the reconciler. Profiles and the DHCP reservation
+# generator also read these entries.
 #
 # Field reference:
-#   name        — Hostname for reporting and identification
-#   rack        — Rack number, 1-10
-#   side        — c01 or c02 (left or right router in the rack)
-#   mgmt_ip     — OOB management IP (on GigabitEthernet0)
-#   wan_octet   — Host octet on the WAN side, used for IP templating in profiles
-#   mac         — MAC address of GigabitEthernet0, used for DHCP reservation
-#   platform    — Hardware model, currently ISR4200 throughout
-#   ios_version — IOS XE version; affects which YANG paths some handlers use
+#   name       : Hostname for reporting and identification
+#   rack       : Rack number, 1-10
+#   side       : c01 or c02 (left or right router in the rack)
+#   mgmt_ip    : OOB management IP (on GigabitEthernet0)
+#   wan_octet  : Host octet on the WAN side, used for IP templating in profiles
+#   mac        : MAC address of GigabitEthernet0, used for DHCP reservation
+#   platform   : Hardware model, currently ISR4200 throughout
+#   ios_version: IOS XE version; affects which YANG paths some handlers use
 #
-# OOB addressing scheme (subject to confirmation — see docs/oob_network_design.md §4):
-#   Currently using the inherited 172.17.X.0/28 per-rack scheme. May migrate to a
-#   single flat /24 once Wim Leppens confirms the OOB subnet allocation. When that
-#   happens, only the mgmt_ip values in this file change; nothing else.
+# The rack OOB addresses are provisional. See docs/oob_network_design.md section 4.
 #
 # WAN addressing:
 #   C01 routers use odd octets:  rack 1 = 10.199.65.1, rack 2 = 10.199.65.3, ...
@@ -28,7 +19,7 @@
 
 devices:
 
-  # ── Rack 1 ─────────────────────────────────────────────────────────────────
+  # Rack 1
   - name: LAB-RA01-C01-R01
     rack: 1
     side: c01
@@ -49,7 +40,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 2 ─────────────────────────────────────────────────────────────────
+  # Rack 2
   - name: LAB-RA02-C01-R01
     rack: 2
     side: c01
@@ -70,7 +61,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 3 ─────────────────────────────────────────────────────────────────
+  # Rack 3
   - name: LAB-RA03-C01-R01
     rack: 3
     side: c01
@@ -91,7 +82,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 4 ─────────────────────────────────────────────────────────────────
+  # Rack 4
   - name: LAB-RA04-C01-R01
     rack: 4
     side: c01
@@ -112,7 +103,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 5 ─────────────────────────────────────────────────────────────────
+  # Rack 5
   - name: LAB-RA05-C01-R01
     rack: 5
     side: c01
@@ -133,7 +124,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 6 ─────────────────────────────────────────────────────────────────
+  # Rack 6
   - name: LAB-RA06-C01-R01
     rack: 6
     side: c01
@@ -154,7 +145,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 7 ─────────────────────────────────────────────────────────────────
+  # Rack 7
   - name: LAB-RA07-C01-R01
     rack: 7
     side: c01
@@ -175,7 +166,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 8 ─────────────────────────────────────────────────────────────────
+  # Rack 8
   - name: LAB-RA08-C01-R01
     rack: 8
     side: c01
@@ -196,8 +187,8 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Rack 9 ─────────────────────────────────────────────────────────────────
-  # Initial test rack — already validated against the engine.
+  # Rack 9
+  # Initial test rack: already validated against the engine.
   - name: lab-dc-h-vm10
     rack: 9
     side: c01
@@ -218,13 +209,9 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "TODO"
 
-  # ── Test switch ──────────────────────────────────────────────────────────────
-  # Catalyst C9200L-24T-4G — test device for switch handler validation.
-  # NETCONF (830) and RESTCONF (443) both confirmed reachable from the Ubuntu
-  # controller. Requires ncclient_device_type: iosxe (not csr) — the CSR
-  # handler does not negotiate cleanly against Catalyst 9000.
-  # See docs/troubleshooting/netconf-connectivity.md for the diagnostic chain
-  # (rejected Mgmt-vrf hypothesis on file).
+  # Test switch
+  # C9200L test device. Use the iosxe ncclient handler; csr does not negotiate
+  # correctly with this switch. See the NETCONF troubleshooting notes.
   - name: lab-dc-h-sw01
     rack: 9
     side: sw
@@ -235,41 +222,13 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "17.6.3"
 
-  # ── First physical router (LAB-R11-C01-R01) ──────────────────────
-  # Cisco ISR4221/K9 — first real-hardware router managed by the
-  # engine. Chassis S/N FGL2644LGX2, hw-rev V05. Factory-default
-  # hostname "Router" at time of onboarding.
+  # ISR4221 test router, chassis FGL2644LGX2. It uses the shared
+  # 172.19.11.0/24 lab subnet rather than the rack address template, so profiles
+  # assigned to it must use explicit addresses. wan_octet 0 marks that exception.
+  # The NIM-2T serial interfaces are outside the automation scope.
   #
-  # Hardware: built-in ISR4221-2x1GE (Gi0/0/0, Gi0/0/1) + NIM-2T sync
-  # serial in subslot 0/1 (NIM-2T is unused by automation — leave
-  # alone, it's an out-of-scope module).
-  #
-  # ADDRESSING NOTE (read carefully before writing profiles):
-  # This device lives on the lab-shared subnet 172.19.11.0/24 by
-  # design, NOT on the student-rack 172.17.X.X/28 scheme. The name
-  # "LAB-R11-C01-R01" conveys logical role (rack 11, side C01,
-  # router 1) — it does NOT imply subnet membership. Decoupling name
-  # from IP is intentional: device identity stays stable across
-  # renumbering, replication, and lab reorganization.
-  #
-  # Consequence: wan_octet: 0 is a positive sentinel meaning "this
-  # device is intentionally outside the rack-templated WAN scheme."
-  # Any profile applied here MUST use explicit IPs — never templated
-  # 172.17.{{ rack }}.{{ wan_octet }} arithmetic. If a future profile
-  # assignment uses rack-templated math against this device, the
-  # engine should fail loudly (separate enhancement, not yet built).
-  #
-  # Bootstrap path on 2026-05-12: SSH-pushed netconf-yang + restconf +
-  # AAA (aaa new-model, login default local, exec default local,
-  # ip http authentication local). RESTCONF + NETCONF both verified
-  # end-to-end with ncclient_device_type: iosxe.
-  #
-  # IMPORTANT: AAA is MANDATORY on IOS XE 17.x for RESTCONF auth —
-  # the implicit fallback in 16.x is removed. Without AAA + local
-  # http auth, RESTCONF returns an OpenResty "page unavailable" error
-  # despite all yang-management processes being healthy. This applies
-  # to all future 17.x devices. See
-  # docs/troubleshooting/netconf-connectivity.md.
+  # IOS XE 17.x RESTCONF authentication requires AAA and local HTTP auth. The
+  # device was bootstrapped with those settings on 2026-05-12.
   - name: LAB-R11-C01-R01
     rack: 11
     side: c01
@@ -281,7 +240,7 @@ devices:
     ncclient_device_type: iosxe
     ios_version: "17.3.4"
 
-  # ── Rack 10 ────────────────────────────────────────────────────────────────
+  # Rack 10
   - name: LAB-RA10-C01-R01
     rack: 10
     side: c01

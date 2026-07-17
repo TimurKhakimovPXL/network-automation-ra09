@@ -1,6 +1,6 @@
-# changes.yaml — Desired state input for automate_interface_desc.py
+# changes.yaml: Desired state input for automate_interface_desc.py
 #
-# Credentials are loaded from .env — do not add username/password here.
+# Credentials are loaded from .env: do not add username/password here.
 #
 # Structure:
 #   Each device entry requires:
@@ -16,7 +16,7 @@
 
 devices:
 
-  # ── Rack 1 ─────────────────────────────────────────────────────────────────
+  # Rack 1
   # - name: LAB-RA01-C01-R01
   #   host: 172.17.1.2
   #   changes:
@@ -31,7 +31,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA01-R management interface
 
-  # ── Rack 2 ─────────────────────────────────────────────────────────────────
+  # Rack 2
   # - name: LAB-RA02-C01-R01
   #   host: 172.17.2.2
   #   changes:
@@ -46,7 +46,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA02-R management interface
 
-  # ── Rack 3 ─────────────────────────────────────────────────────────────────
+  # Rack 3
   # - name: LAB-RA03-C01-R01
   #   host: 172.17.3.2
   #   changes:
@@ -61,7 +61,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA03-R management interface
 
-  # ── Rack 4 ─────────────────────────────────────────────────────────────────
+  # Rack 4
   # - name: LAB-RA04-C01-R01
   #   host: 172.17.4.2
   #   changes:
@@ -76,7 +76,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA04-R management interface
 
-  # ── Rack 5 ─────────────────────────────────────────────────────────────────
+  # Rack 5
   # - name: LAB-RA05-C01-R01
   #   host: 172.17.5.2
   #   changes:
@@ -91,7 +91,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA05-R management interface
 
-  # ── Rack 6 ─────────────────────────────────────────────────────────────────
+  # Rack 6
   # - name: LAB-RA06-C01-R01
   #   host: 172.17.6.2
   #   changes:
@@ -106,7 +106,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA06-R management interface
 
-  # ── Rack 7 ─────────────────────────────────────────────────────────────────
+  # Rack 7
   # - name: LAB-RA07-C01-R01
   #   host: 172.17.7.2
   #   changes:
@@ -121,7 +121,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA07-R management interface
 
-  # ── Rack 8 ─────────────────────────────────────────────────────────────────
+  # Rack 8
   # - name: LAB-RA08-C01-R01
   #   host: 172.17.8.2
   #   changes:
@@ -136,7 +136,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA08-R management interface
 
-  # ── Rack 9 (confirmed working — tested against real hardware) ───────────────
+  # Rack 9 (confirmed working: tested against real hardware)
   - name: LAB-RA09-C01-R01
     host: 172.17.9.2
     changes:
@@ -151,7 +151,7 @@ devices:
   #       interface_name: "0/0/0"
   #       description: RA09-R management interface
 
-  # ── Rack 10 ────────────────────────────────────────────────────────────────
+  # Rack 10
   # - name: LAB-RA10-C01-R01
   #   host: 172.17.10.2
   #   changes:

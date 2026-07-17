@@ -1,5 +1,5 @@
 #!/bin/bash
-# fetch_yang.sh — Download YANG modules from YangModels for both IOS XE versions
+# fetch_yang.sh: Download YANG modules from YangModels for both IOS XE versions
 # the codebase branches on (16.8.1 and 17.3.1).
 #
 # Run from the root of network-automation-ra09:
@@ -26,7 +26,7 @@ VERSIONS=("1681" "1731")
 for version in "${VERSIONS[@]}"; do
   target_dir="yang/ios-xe-${version}"
   mkdir -p "$target_dir"
-  echo "─── IOS XE ${version} → ${target_dir}/ ───"
+  echo "IOS XE ${version}: ${target_dir}/"
 
   for module in "${MODULES[@]}"; do
     url="${BASE_URL}/${version}/${module}.yang"

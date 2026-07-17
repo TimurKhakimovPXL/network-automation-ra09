@@ -3,13 +3,9 @@ handlers/_normalize.py
 
 Comparison-time value normalisation helpers.
 
-Cisco IOS XE returns RESTCONF/NETCONF values in shapes that don't always
-match how operators write them in changes.yaml. This module normalises
-BOTH sides of every _states_match comparison to the same canonical form
-so equal values compare equal regardless of source representation.
-
-Use these helpers in every _extract_* parser AND every _desired_state
-builder. Asymmetric normalisation re-introduces the bug.
+Cisco IOS XE values do not always use the same types and formats as
+``changes.yaml``. These helpers convert parsed and desired values before they
+are compared.
 
 Common pitfalls these helpers address:
     - VLAN id 91 (int from RESTCONF) vs "91" (str from YAML)
@@ -25,12 +21,12 @@ import ipaddress
 from typing import Any
 
 
-# ── Type coercion ─────────────────────────────────────────────────────────────
+# Type coercion
 
 def normalize_int(value: Any) -> int | None:
     """
     Coerce ints, numeric strings, and bools to int.
-    Returns None for None or non-numeric input — never raises.
+    Return None for None or non-numeric input.
     """
     if value is None:
         return None
@@ -53,7 +49,7 @@ def normalize_str(value: Any) -> str | None:
 def normalize_bool(value: Any) -> bool | None:
     """
     Accept True/False, "true"/"false" (any case), 1/0.
-    Returns None for unrecognised input (not False — None is the
+    Returns None for unrecognised input (not False: None is the
     'unknown' state, False is the 'explicitly false' state).
     """
     if value is None:
@@ -71,7 +67,7 @@ def normalize_bool(value: Any) -> bool | None:
     return None
 
 
-# ── Network values ────────────────────────────────────────────────────────────
+# Network values
 
 def normalize_ipv4(value: Any) -> str | None:
     """
@@ -80,7 +76,7 @@ def normalize_ipv4(value: Any) -> str | None:
 
     Note: rejects zero-padded octets (e.g. '192.168.001.001') as malformed,
     matching Python 3.9.5+ behaviour (CVE-2021-29921). If you have such
-    values in YAML, fix the YAML — they're ambiguous in security contexts.
+    values in YAML, fix the YAML: they're ambiguous in security contexts.
     """
     if value is None:
         return None
@@ -94,7 +90,7 @@ def normalize_mask(value: Any) -> str | None:
     """
     Canonicalise IPv4 subnet mask in dotted-decimal form.
     Accepts dotted ('255.255.255.0') or prefix-length ('24', 24).
-    Always returns dotted-decimal — that's what Cisco-IOS-XE-native uses.
+    The result uses the dotted-decimal form returned by Cisco-IOS-XE-native.
     Returns None for invalid input.
     """
     if value is None:
@@ -116,15 +112,13 @@ def normalize_mask(value: Any) -> str | None:
         return None
 
 
-# ── Cisco-specific shape coercion ─────────────────────────────────────────────
+# Cisco-specific shape coercion
 
 def as_list(value: Any) -> list:
     """
     Cisco RESTCONF returns YANG lists as a single dict when the list has
     exactly one entry, and as a list of dicts when it has more.
     This helper normalises both shapes to a list.
-
-    Use at every site where you iterate a value extracted from RESTCONF JSON.
 
     Examples:
         as_list({"address": "1.1.1.1"})           → [{"address": "1.1.1.1"}]
@@ -141,8 +135,7 @@ def as_list(value: Any) -> list:
 
 def normalize_iface_name(value: Any) -> str | None:
     """
-    Normalise interface 'name' leaf to the form Cisco-IOS-XE-native uses:
-    just the bare numeric part, no type prefix.
+    Remove a known type prefix from an interface name.
     'GigabitEthernet0/0/0' → '0/0/0'
     '0/0/0'                → '0/0/0'
     Returns None for None.

@@ -31,7 +31,7 @@ RESTCONF_HEADERS = {
 RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/interface"
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get(device_params: dict, interface_type: str, interface_name: str) -> dict:
     host     = device_params["host"]
@@ -58,7 +58,7 @@ def _extract_description(response: requests.Response, interface_type: str) -> st
     return norm.normalize_str(iface.get("description"))
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _netconf_edit(device_params: dict, interface_type: str, interface_name: str, description: str) -> None:
     interface_tag = xml.interface_tag(interface_type)
@@ -78,7 +78,7 @@ def _netconf_edit(device_params: dict, interface_type: str, interface_name: str,
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     """
@@ -118,7 +118,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
             current_desc = None
         else:
             result["status"] = "interface_not_found"
-            result["error"]  = f"HTTP 404 — interface {iface_type}{iface_name} not found on device"
+            result["error"]  = f"HTTP 404: interface {iface_type}{iface_name} not found on device"
             return result
     elif not response.ok:
         result["status"] = "read_failed"
@@ -167,7 +167,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         else:
             result["status"] = "verify_mismatch"
             result["error"]  = f"Expected '{desired_desc}', got '{verified_desc}'"
-            # Force-capture so the operator can see exactly what RESTCONF returned
+            # Capture the response that failed verification.
             _debug.capture(device_name, "interface_description", "verify",
                            verify_response, change=change, force=True)
 

@@ -33,7 +33,7 @@ RESTCONF_HEADERS = {
 RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/interface/{iface_type}={iface_name}"
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get(device_params: dict, iface_type: str, iface_name: str) -> requests.Response:
     host     = device_params["host"]
@@ -62,7 +62,7 @@ def _extract_ip(response: requests.Response, iface_type: str) -> tuple[str | Non
     return norm.normalize_ipv4(addr.get("address")), norm.normalize_mask(addr.get("mask"))
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
                   ip: str, mask: str, secondary: bool) -> None:
@@ -103,7 +103,7 @@ def _netconf_edit(device_params: dict, iface_type: str, iface_name: str,
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     iface_type = change["interface_type"]
@@ -141,7 +141,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
             current_ip, current_mask = None, None
         else:
             result["status"] = "interface_not_found"
-            result["error"]  = f"HTTP 404 — {iface_type}{iface_name} not found"
+            result["error"]  = f"HTTP 404: {iface_type}{iface_name} not found"
             return result
     elif not response.ok:
         result["status"] = "read_failed"

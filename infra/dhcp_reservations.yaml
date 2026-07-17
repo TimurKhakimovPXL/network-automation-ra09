@@ -1,23 +1,10 @@
-# dhcp_reservations.yaml — MAC → IP bindings for the OOB management network.
-#
-# This file is the authoritative declaration of DHCP reservations. The DHCP
-# server itself is downstream — its config is rendered from this file via
-# scripts/apply_dhcp_reservations.py.
-#
-# Same source-of-truth principle as everything else: edit this file, run the
-# render script, the DHCP server gets updated. Never edit DHCP server config
-# directly; if you do, the next render will overwrite your changes.
-#
-# This file is largely redundant with infra/inventory.yaml — both contain
-# (mac, mgmt_ip) tuples per device. Kept separate because:
-#   - inventory describes WHAT EXISTS (hardware)
-#   - this file describes WHAT THE DHCP SERVER SHOULD HAND OUT (network policy)
-# In practice, the render script reads BOTH and ensures they agree. Drift
-# between them is an error condition the script will refuse to render.
+# DHCP scope settings for the OOB network. Device MAC and address values come
+# from inventory.yaml when scripts/apply_dhcp_reservations.py renders the
+# PowerShell configuration.
 
 scope:
   name: "OOB-Management"
-  subnet: "172.17.0.0/16"          # provisional — see docs/oob_network_design.md §4
+  subnet: "172.17.0.0/16"          # provisional: see docs/oob_network_design.md §4
   lease_duration_hours: 24
   options:
     router: "TODO"                  # default gateway for OOB subnet
@@ -26,7 +13,7 @@ scope:
     boot_server_ip: "10.199.64.134" # TFTP server (option 66)
     bootfile_name: "/ztp.py"        # ZTP fetch path (option 67)
 
-# Reservations are generated from inventory — do not edit the entries below
+# Reservations are generated from inventory: do not edit the entries below
 # manually. Run scripts/apply_dhcp_reservations.py to regenerate after changing
 # inventory.yaml. The script verifies inventory matches before writing.
 #
@@ -34,7 +21,7 @@ scope:
 # PowerShell that the supervisor runs on the Windows DHCP server.
 
 reservations:
-  # Auto-generated from inventory.yaml — DO NOT EDIT MANUALLY
+  # Generated from inventory.yaml
   # (Once MACs are collected, the render script will populate this section.)
 
   # Example structure once populated:

@@ -12,18 +12,18 @@ WorkingDirectory=/opt/network-automation-ra09
 EnvironmentFile=/opt/network-automation-ra09/.env
 ExecStart=/opt/network-automation-ra09/venv/bin/python -m reconciler.reconciler
 
-# Restart policy — survive transient failures
+# Restart after a process failure
 Restart=always
 RestartSec=10
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
-# Logging — go to journald
+# Send output to journald
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=network-reconciler
 
-# Resource limits — defensive, this should be lightweight
+# Resource limits
 MemoryMax=512M
 CPUQuota=50%
 

@@ -53,23 +53,18 @@ WRAPPED_SCHEMA = "wrapped"
 WRAPPED_SCHEMA_MIN_REVISION = "2020-07-01"
 
 
-# ── Version detection ──────────────────────────────────────────────────────────
+# Version detection
 
 def _get_ospf_model_revision(device_params: dict) -> str:
     """
     Return the Cisco-IOS-XE-ospf YANG model revision date the device
     advertises in its NETCONF capabilities, e.g. '2020-07-01'.
 
-    We query the device at runtime because the YANG model revision is
-    what determines the schema (and therefore the element name) that
-    the device's NETCONF parser will accept. The IOS XE release number
-    is NOT a reliable proxy: a device on IOS XE 17.3.4a can ship the
-    mid-2020 (mask) model revision, contradicting the assumption that
-    17.x always uses <wildcard>.
+    The model revision, rather than the IOS XE release number, determines the
+    accepted path and network key.
 
-    Returns the first wrapped-schema revision as a conservative modern default
-    if capabilities cannot be queried. This preserves the behaviour used by
-    previously validated IOS XE 17.x devices.
+    If the capability cannot be read, return the first wrapped-schema revision.
+    This keeps the payload used by the validated IOS XE 17.x devices.
     """
     try:
         with manager.connect(**device_params) as m:
@@ -92,7 +87,7 @@ def _schema_for_revision(revision: str) -> str:
     return WRAPPED_SCHEMA
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_url(host: str, process_id: int, schema: str) -> str:
     template = RESTCONF_LEGACY if schema == LEGACY_SCHEMA else RESTCONF_WRAPPED
@@ -166,13 +161,13 @@ def _desired_state(change: dict) -> dict:
 def _states_match(current: dict, desired: dict) -> bool:
     if current["router_id"] != desired["router_id"]:
         return False
-    # Compare as sets — order in YANG response is not guaranteed
+    # Compare as sets: order in YANG response is not guaranteed
     current_nets = {(n["prefix"], n["wildcard"], n["area"]) for n in current["networks"]}
     desired_nets = {(n["prefix"], n["wildcard"], n["area"]) for n in desired["networks"]}
     return current_nets == desired_nets
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _build_network_xml(networks: list[dict], schema: str) -> str:
     """
@@ -233,7 +228,7 @@ def _netconf_edit(device_params: dict, change: dict, schema: str) -> None:
     _netconf.edit_config(device_params, _build_config(change, schema))
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     process_id = change["process_id"]

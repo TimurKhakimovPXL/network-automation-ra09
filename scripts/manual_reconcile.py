@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-manual_reconcile.py — One-shot reconciliation, bypasses the loop.
+manual_reconcile.py: One-shot reconciliation, bypasses the loop.
 
 Useful for:
-  - Debugging — run reconciliation manually and see the report immediately
+  - Debugging: run reconciliation manually and see the report immediately
   - Testing changes to a profile or class_state.yaml before relying on the
     background loop to pick them up
   - First-time validation against a single rack before enabling the systemd unit
@@ -12,9 +12,7 @@ Usage:
     python3 scripts/manual_reconcile.py [--dry-run]
 
 --dry-run:
-    Resolve the target state and probe device reachability, but do NOT apply
-    any changes. Prints what would be done. Use this to verify your profile
-    renders correctly before letting the reconciler touch real devices.
+    Resolve target state and probe reachability without applying changes.
 """
 
 import argparse

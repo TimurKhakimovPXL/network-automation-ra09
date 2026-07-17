@@ -35,7 +35,7 @@ RESTCONF_HEADERS = {
 RESTCONF_BASE = "https://{host}/restconf/data/Cisco-IOS-XE-native:native/ip/route"
 
 
-# ── RESTCONF ───────────────────────────────────────────────────────────────────
+# RESTCONF
 
 def _restconf_get(device_params: dict) -> requests.Response:
     host     = device_params["host"]
@@ -86,7 +86,7 @@ def _desired_routes(change: dict) -> set[tuple]:
     }
 
 
-# ── NETCONF ────────────────────────────────────────────────────────────────────
+# NETCONF
 
 def _build_route_xml(routes: list[dict]) -> str:
     lines = []
@@ -122,7 +122,7 @@ def _netconf_edit(device_params: dict, routes: list[dict]) -> None:
     _netconf.edit_config(device_params, payload)
 
 
-# ── Handler ────────────────────────────────────────────────────────────────────
+# Handler
 
 def handle(device_params: dict, device_name: str, change: dict) -> dict:
     result = {
@@ -167,7 +167,7 @@ def handle(device_params: dict, device_name: str, change: dict) -> dict:
         {"prefix": p, "mask": m, "next_hop": n} for p, m, n in missing
     ]
 
-    # 3. Write — only push the missing routes (additive, idempotent)
+    # 3. Write: only push the missing routes (additive, idempotent)
     routes_to_add = [
         r for r in change.get("routes", [])
         if (

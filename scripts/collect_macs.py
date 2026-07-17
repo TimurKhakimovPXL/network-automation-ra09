@@ -1,5 +1,5 @@
 """
-collect_macs.py — Collect GigabitEthernet0 MAC addresses from all lab devices.
+collect_macs.py: Collect GigabitEthernet0 MAC addresses from all lab devices.
 
 Reads inventory.yaml, attempts a RESTCONF GET against the IOS XE operational
 interface model for each device, and outputs:
@@ -41,7 +41,7 @@ from dotenv import load_dotenv
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
+# Constants
 
 RESTCONF_HEADERS = {
     "Accept": "application/yang-data+json",
@@ -54,7 +54,7 @@ OPER_URL_TEMPLATE = (
 
 CONSOLE_CMD = "show interface GigabitEthernet0 | include Hardware"
 
-# ── ANSI colours (disabled on non-TTY) ────────────────────────────────────────
+# ANSI colours (disabled on non-TTY)
 
 _USE_COLOR = sys.stdout.isatty()
 
@@ -67,7 +67,7 @@ ERR   = lambda t: _c(t, "31")   # red
 BOLD  = lambda t: _c(t, "1")    # bold
 
 
-# ── Core fetch ─────────────────────────────────────────────────────────────────
+# Core fetch
 
 def fetch_mac(host: str, username: str, password: str, timeout: float) -> Optional[str]:
     """
@@ -76,8 +76,7 @@ def fetch_mac(host: str, username: str, password: str, timeout: float) -> Option
     Returns the MAC string (e.g. "00:1a:2b:3c:4d:5e") on success,
     or None if the device is unreachable or the response is unexpected.
 
-    Raises nothing — all exceptions are caught and returned as None so the
-    caller can continue with the next device.
+    Request and response errors return None so the next device can be checked.
     """
     url = OPER_URL_TEMPLATE.format(host=host)
     try:
@@ -111,10 +110,10 @@ def fetch_mac(host: str, username: str, password: str, timeout: float) -> Option
     if not mac or not isinstance(mac, str):
         return None
 
-    return mac.lower()  # normalise to lowercase for DHCP reservation consistency
+    return mac.lower()
 
 
-# ── Inventory loader ───────────────────────────────────────────────────────────
+# Inventory loader
 
 def load_inventory(repo_root: Path) -> list:
     """Load devices from infra/inventory.yaml. Falls back to inventory.yaml at
@@ -137,7 +136,7 @@ def load_inventory(repo_root: Path) -> list:
     sys.exit(1)
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# Main
 
 def main():
     parser = argparse.ArgumentParser(
@@ -157,7 +156,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # ── Credentials ───────────────────────────────────────────────────────────
+    # Credentials
     load_dotenv()
     username = os.environ.get("LAB_USER")
     password = os.environ.get("LAB_PASS")
@@ -165,7 +164,7 @@ def main():
         print(ERR("ERROR: LAB_USER and LAB_PASS must be set in .env"))
         sys.exit(1)
 
-    # ── Devices ───────────────────────────────────────────────────────────────
+    # Devices
     repo_root = Path(__file__).resolve().parent.parent
     all_devices = load_inventory(repo_root)
 
@@ -176,10 +175,10 @@ def main():
             print(ERR(f"ERROR: No devices found for rack {args.rack}"))
             sys.exit(1)
 
-    # ── Run ───────────────────────────────────────────────────────────────────
+    # Run
     print()
-    print(BOLD(f"Collecting MACs — {len(devices)} device(s) — timeout {args.timeout}s per device"))
-    print(BOLD("─" * 64))
+    print(BOLD(f"Collecting MACs: {len(devices)} device(s): timeout {args.timeout}s per device"))
+    print(BOLD("-" * 64))
 
     results = []   # list of (device_dict, mac_or_none)
     start = datetime.now(timezone.utc)
@@ -195,7 +194,7 @@ def main():
         mac = fetch_mac(host, username, password, args.timeout)
 
         if mac:
-            status = OK(f"✓  {mac}")
+            status = OK(f"OK  {mac}")
         else:
             status = WARN("UNREACHABLE")
 
@@ -203,19 +202,19 @@ def main():
         results.append((device, mac))
 
     elapsed = (datetime.now(timezone.utc) - start).total_seconds()
-    print(BOLD("─" * 64))
+    print(BOLD("-" * 64))
     print(f"Done in {elapsed:.1f}s\n")
 
-    # ── Summary table ─────────────────────────────────────────────────────────
+    # Summary table
     found       = [(d, m) for d, m in results if m]
     unreachable = [(d, m) for d, m in results if not m]
 
     print(BOLD(f"Results: {len(found)} collected, {len(unreachable)} unreachable"))
 
-    # ── YAML patch ────────────────────────────────────────────────────────────
+    # YAML patch
     if found:
         print()
-        print(BOLD("─── inventory.yaml patch (devices with MAC collected) ───"))
+        print(BOLD("inventory.yaml patch for devices with collected MACs"))
         print("# Paste these mac: values into infra/inventory.yaml\n")
 
         patch_lines = []
@@ -233,10 +232,10 @@ def main():
             )
             print(f"\n{OK(f'Patch written to {args.output}')}")
 
-    # ── Manual instructions for unreachable devices ────────────────────────────
+    # Manual instructions for unreachable devices
     if unreachable:
         print()
-        print(BOLD("─── Unreachable — collect manually via console ───"))
+        print(BOLD("Unreachable devices: collect these MACs from the console"))
         print(f"  Console command: {BOLD(CONSOLE_CMD)}\n")
         print("  Then update inventory.yaml:")
         print()
@@ -245,7 +244,7 @@ def main():
             print(f"  mac: \"<paste-here>\"")
             print()
 
-    # ── Machine-readable output ───────────────────────────────────────────────
+    # Machine-readable output
     report = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "elapsed_seconds": round(elapsed, 1),

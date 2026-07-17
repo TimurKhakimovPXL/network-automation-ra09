@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent.parent / ".env")
 
-USERNAME = os.environ.get("LAB_USER", "cisco")
-PASSWORD = os.environ.get("LAB_PASS", "cisco")
+USERNAME = os.environ.get("LAB_USER")
+PASSWORD = os.environ.get("LAB_PASS")
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -212,6 +212,10 @@ def write_report(report, path="report.json"):
 
 def main():
     input_file = "changes.yaml"
+
+    if not USERNAME or not PASSWORD:
+        print("[ERROR] LAB_USER and LAB_PASS must be set in the repository .env")
+        return
 
     if not Path(input_file).exists():
         print(f"[ERROR] Input file not found: {input_file}")

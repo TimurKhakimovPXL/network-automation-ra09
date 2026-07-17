@@ -45,12 +45,12 @@ import sys
 from datetime import datetime
 
 # Constants
-# Credentials come from environment variables. The defaults are for lab use.
+# Credentials must be supplied through environment variables.
 
 DOMAIN_NAME   = os.environ.get("ZTP_DOMAIN",   "data.labnet.local")
-ENABLE_SECRET = os.environ.get("ZTP_SECRET",   "cisco")
-ADMIN_USER    = os.environ.get("ZTP_USER",     "admin")
-ADMIN_PASS    = os.environ.get("ZTP_PASS",     "cisco")
+ENABLE_SECRET = os.environ.get("ZTP_SECRET")
+ADMIN_USER    = os.environ.get("ZTP_USER")
+ADMIN_PASS    = os.environ.get("ZTP_PASS")
 LOG_PATH      = os.environ.get("ZTP_LOG_PATH", "/bootflash/ztp.log")
 
 # Management interface: ISR4200 uses Gig0/0/0 as the management-side port
@@ -206,13 +206,10 @@ def apply_config(device):
     mgmt_mask = device["mgmt_mask"]
     gateway   = device["gateway"]
 
-    log(f"Pushing bootstrap config for {hostname}...")
+    if not ENABLE_SECRET or not ADMIN_USER or not ADMIN_PASS:
+        raise RuntimeError("ZTP_SECRET, ZTP_USER, and ZTP_PASS are required")
 
-    # Warn when a lab default is still in use.
-    if ENABLE_SECRET == "cisco":
-        log("[WARN] Using default enable secret 'cisco': set ZTP_SECRET in production")
-    if ADMIN_PASS == "cisco":
-        log("[WARN] Using default admin password 'cisco': set ZTP_PASS in production")
+    log(f"Pushing bootstrap config for {hostname}...")
 
     config = [
         # Identity
@@ -316,6 +313,22 @@ def main():
     log("ZTP bootstrap started")
     log(f"TFTP: 10.199.64.134  |  Domain: {DOMAIN_NAME}")
     log("=" * 60)
+
+    missing_credentials = [
+        name
+        for name, value in (
+            ("ZTP_SECRET", ENABLE_SECRET),
+            ("ZTP_USER", ADMIN_USER),
+            ("ZTP_PASS", ADMIN_PASS),
+        )
+        if not value
+    ]
+    if missing_credentials:
+        log(
+            "[ERROR] Missing required ZTP credential variables: "
+            + ", ".join(missing_credentials)
+        )
+        sys.exit(1)
 
     # 1. Read DHCP-assigned IP from the management interface
     log(f"Reading DHCP IP from {MGMT_INTERFACE}...")

@@ -615,10 +615,15 @@ Before running the flexible engine against real hardware, confirm the following 
 
 ```python
 from ncclient import manager
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 m = manager.connect(
     host="172.17.9.2", port=830,
-    username="cisco", password="cisco",
+    username=os.environ["LAB_USER"],
+    password=os.environ["LAB_PASS"],
     hostkey_verify=False,
     device_params={"name": "csr"},
     allow_agent=False, look_for_keys=False,
@@ -930,11 +935,11 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 
 # Create environment file
 cat > yangsuite/setup.env << 'EOF'
-DJANGO_SUPERUSER_USERNAME=admin
-DJANGO_SUPERUSER_PASSWORD=admin123
-DJANGO_SUPERUSER_EMAIL=admin@localhost.com
+DJANGO_SUPERUSER_USERNAME=replace_with_admin_username
+DJANGO_SUPERUSER_PASSWORD=replace_with_strong_password
+DJANGO_SUPERUSER_EMAIL=replace_with_admin_email
 DJANGO_SETTINGS_MODULE=yangsuite.settings.production
-SECRET_KEY=yangsuite-secret-key-change-in-production
+SECRET_KEY=replace_with_random_secret_key
 DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1
 EOF
 
@@ -952,15 +957,15 @@ podman-compose up -d --no-build
 # Create admin user (first run only)
 podman exec -it docker_yangsuite_1 bash -c \
   "cd /usr/local/lib/python3.10/dist-packages/yangsuite && \
-   python3 manage.py createsuperuser --username admin --email admin@localhost.com"
+   python3 manage.py createsuperuser"
 ```
 
 #### 3.6.2 Access
 
 ```
 URL:      https://localhost:8443
-Username: admin
-Password: admin123
+Username: value set during installation
+Password: value set during installation
 ```
 
 Accept the self-signed certificate warning in the browser.

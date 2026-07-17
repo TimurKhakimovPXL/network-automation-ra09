@@ -9,6 +9,7 @@
 #   wan_octet  : Host octet on the WAN side, used for IP templating in profiles
 #   mac        : MAC address of GigabitEthernet0, used for DHCP reservation
 #   platform   : Hardware model, currently ISR4200 throughout
+#   ncclient_device_type: required ncclient profile, either csr or iosxe
 #   ios_version: IOS XE version; affects which YANG paths some handlers use
 #
 # The rack OOB addresses are provisional. See docs/oob_network_design.md section 4.

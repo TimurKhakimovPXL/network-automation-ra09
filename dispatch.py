@@ -55,6 +55,25 @@ HANDLERS: Dict[str, HandlerFn] = {
 
 SUCCESS_STATUSES = frozenset({"success", "already_correct"})
 SKIPPED_STATUS = "skipped_due_to_dependency"
+NCCLIENT_DEVICE_TYPES = frozenset({"csr", "iosxe"})
+
+
+def validate_ncclient_device_type(device: dict) -> str | None:
+    """Return an inventory error for a missing or unsupported device type."""
+    value = device.get("ncclient_device_type")
+    if value in NCCLIENT_DEVICE_TYPES:
+        return None
+
+    device_name = device.get("name", device.get("host", "unknown"))
+    if value is None:
+        return (
+            f"Device '{device_name}' is missing required "
+            "ncclient_device_type (allowed: csr, iosxe)"
+        )
+    return (
+        f"Device '{device_name}' has invalid ncclient_device_type {value!r} "
+        "(allowed: csr, iosxe)"
+    )
 
 
 def check_dependencies(
@@ -96,8 +115,10 @@ def record_outcome(
 __all__ = [
     "HANDLERS",
     "HandlerFn",
+    "NCCLIENT_DEVICE_TYPES",
     "SUCCESS_STATUSES",
     "SKIPPED_STATUS",
     "check_dependencies",
     "record_outcome",
+    "validate_ncclient_device_type",
 ]

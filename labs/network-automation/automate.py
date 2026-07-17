@@ -39,6 +39,7 @@ from dispatch import (  # noqa: E402
     SKIPPED_STATUS,
     check_dependencies,
     record_outcome,
+    validate_ncclient_device_type,
 )
 
 CHANGES_FILE = "changes.yaml"
@@ -69,10 +70,9 @@ def build_device_params(device: dict, username: str, password: str) -> dict:
 
     The 'ncclient_device_type' field selects which ncclient profile is used
     for the NETCONF SSH subsystem negotiation. Values:
-        csr   : CSR1000v (default for backward compatibility)
+        csr   : CSR1000v
         iosxe : ISR4200, Catalyst 9000 series, any other IOS XE platform
-    The field is set per-device in inventory.yaml (or per-entry in changes.yaml)
-    and falls back to 'csr' if absent so existing inventory entries keep working.
+    The field is required for every device entry.
     """
     return {
         "host":                    device["host"],
@@ -80,7 +80,7 @@ def build_device_params(device: dict, username: str, password: str) -> dict:
         "username":                username,
         "password":                password,
         "hostkey_verify":          False,
-        "device_params":           {"name": device.get("ncclient_device_type", "csr")},
+        "device_params":           {"name": device["ncclient_device_type"]},
         "allow_agent":             False,
         "look_for_keys":           False,
     }
@@ -202,6 +202,17 @@ def main() -> None:
         changes     = device.get("changes", [])
 
         log(f"=== {device_name} ({device['host']}): {len(changes)} change(s) ===")
+
+        inventory_error = validate_ncclient_device_type(device)
+        if inventory_error:
+            result = {
+                "device_name": device_name,
+                "status": "invalid_inventory",
+                "error": inventory_error,
+            }
+            all_results.append(result)
+            log(f"  [FAIL] invalid_inventory: {inventory_error}")
+            continue
 
         if not changes:
             log("  No changes defined for this device: skipping.")

@@ -9,8 +9,8 @@ from reconciler import reconciler
 
 
 DEVICES = [
-    {"name": "r1", "mgmt_ip": "192.0.2.1"},
-    {"name": "r2", "mgmt_ip": "192.0.2.2"},
+    {"name": "r1", "mgmt_ip": "192.0.2.1", "ncclient_device_type": "iosxe"},
+    {"name": "r2", "mgmt_ip": "192.0.2.2", "ncclient_device_type": "iosxe"},
 ]
 TARGET = {"r1": [], "r2": []}
 

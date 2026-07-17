@@ -50,6 +50,7 @@ from dispatch import (  # noqa: E402
     SKIPPED_STATUS,
     check_dependencies,
     record_outcome,
+    validate_ncclient_device_type,
 )
 
 from reconciler import git_watcher, state_resolver
@@ -333,7 +334,7 @@ def apply_changes_to_device(
         "username":       os.environ["LAB_USER"],
         "password":       os.environ["LAB_PASS"],
         "hostkey_verify": False,
-        "device_params":  {"name": device.get("ncclient_device_type", "csr")},
+        "device_params":  {"name": device["ncclient_device_type"]},
         "allow_agent":    False,
         "look_for_keys":  False,
     }
@@ -444,6 +445,19 @@ def reconcile_once() -> Dict[str, Any]:
 
     # 3. Per-device convergence
     inventory_by_name = {d["name"]: d for d in inventory}
+    inventory_errors = {}
+    for device in inventory:
+        inventory_error = validate_ncclient_device_type(device)
+        if not inventory_error:
+            continue
+        device_name = device["name"]
+        inventory_errors[device_name] = inventory_error
+        log.error("[%s] invalid inventory: %s", device_name, inventory_error)
+        report["devices"][device_name] = {
+            "mgmt_ip": device.get("mgmt_ip"),
+            "status": "invalid_inventory",
+            "error": inventory_error,
+        }
 
     for device_name, target_changes in target_state.items():
         device = inventory_by_name.get(device_name)
@@ -452,6 +466,9 @@ def reconcile_once() -> Dict[str, Any]:
             continue
 
         device_report: Dict[str, Any] = {"mgmt_ip": device["mgmt_ip"]}
+
+        if device_name in inventory_errors:
+            continue
 
         # Observe mode: probe reachability only. No writes, no wipes, no
         # config probing. Right mode for devices the engine cannot safely
@@ -525,6 +542,7 @@ def reconcile_once() -> Dict[str, Any]:
         eligible = [
             d for d in inventory
             if target_state.get(d["name"]) is not None
+            and d["name"] not in inventory_errors
         ]
         wipe_targets = [d for d in eligible if d["name"] not in completed]
 
